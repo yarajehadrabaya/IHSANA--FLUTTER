@@ -1,5 +1,7 @@
   import 'package:flutter/material.dart';
   import 'package:flutter_localizations/flutter_localizations.dart';
+  import 'package:ihsana/auth/login_screen.dart';
+  import 'auth/auth_gate.dart';
 
   import 'theme/app_theme.dart';
   import 'screens/splash_screen.dart';
@@ -22,13 +24,17 @@
 import 'package:ihsana/results/results_screen.dart';
 import 'package:ihsana/scoring/moca_result.dart';
 
+import 'package:firebase_core/firebase_core.dart';
 
 
 
 
-  void main() {
-    runApp(const IhsanaApp());
-  }
+  void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+  runApp(const IhsanaApp());
+}
+
 
   class IhsanaApp extends StatelessWidget {
     const IhsanaApp({super.key});
@@ -60,7 +66,9 @@ import 'package:ihsana/scoring/moca_result.dart';
         },
 
         theme: AppTheme.lightTheme,
-          // home: const SplashScreen(),
+        // home: const AuthGate(),
+            // home: const LoginScreen()
+          home: const SplashScreen(),
           // home: const ProfileSetupScreen(),
           //  home: const HomeScreen(username: 'يارا'),
           //  home: const SessionsHistoryScreen(),
@@ -77,18 +85,18 @@ import 'package:ihsana/scoring/moca_result.dart';
 
          // home: const OrientationScreen(),
 
-home: ResultsScreen(
-  result: MocaResult(
-    visuospatial: 4,
-    naming: 3,
-    attention: 5,
-    language: 2,
-    abstraction: 1,
-    delayedRecall: 3,
-    orientation: 6,
-    educationBelow12Years: true,
-  ),
-),
+// home: ResultsScreen(
+//   result: MocaResult(
+//     visuospatial: 4,
+//     naming: 3,
+//     attention: 5,
+//     language: 2,
+//     abstraction: 1,
+//     delayedRecall: 3,
+//     orientation: 6,
+//     educationBelow12Years: true,
+//   ),
+// ),
 
       );
     }

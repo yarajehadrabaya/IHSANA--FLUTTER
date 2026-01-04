@@ -1,61 +1,107 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
 import '../widgets/app_background.dart';
 import '../theme/app_theme.dart';
-import '../models/session_result.dart';
 import '../utils/moca_classification_mapper.dart';
 
 class SessionsHistoryScreen extends StatelessWidget {
   const SessionsHistoryScreen({super.key});
 
-  // بيانات وهمية (لاحقاً من Backend)
-  List<SessionResult> get sessions => const [
-        SessionResult(date: '12 أيلول 2025', score: 28),
-        SessionResult(date: '3 أيلول 2025', score: 22),
-        SessionResult(date: '22 آب 2025', score: 15, educationBelow12Years: true),
-      ];
+  Stream<QuerySnapshot<Map<String, dynamic>>> _sessionsStream() {
+    final user = FirebaseAuth.instance.currentUser!;
+    return FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('sessions')
+        // ❌ لا فلترة على is_completed (للاختبار)
+        .orderBy('created_at', descending: true)
+        .snapshots();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('جلساتي السابقة'),
+        title: const Text('جلساتي'),
         centerTitle: true,
       ),
       body: AppBackground(
-        child: ListView.builder(
-          padding: const EdgeInsets.all(24),
-          itemCount: sessions.length,
-          itemBuilder: (context, index) {
-            final session = sessions[index];
-            final classification = classifyMocaScore(
-              rawScore: session.score,
-              educationBelow12Years: session.educationBelow12Years,
-            );
+        child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: _sessionsStream(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-            return SessionCard(
-              date: session.date,
-              score: session.score,
-              classification: classification,
+            if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+              return const Center(
+                child: Text('لا يوجد جلسات بعد'),
+              );
+            }
+
+            final sessions = snapshot.data!.docs;
+
+            return ListView.builder(
+              padding: const EdgeInsets.all(24),
+              itemCount: sessions.length,
+              itemBuilder: (context, index) {
+                final data = sessions[index].data();
+
+                final score = data['moca_score'] ?? 0;
+                final isCompleted = data['is_completed'] == true;
+                final educationBelow12 =
+                    data['education_below_12_years'] == true;
+
+                final classification = classifyMocaScore(
+                  rawScore: score,
+                  educationBelow12Years: educationBelow12,
+                );
+
+                final timestamp = data['created_at'] as Timestamp?;
+                final date = timestamp != null
+                    ? _formatDate(timestamp.toDate())
+                    : '—';
+
+                final sessionNumber = index + 1;
+
+                return SessionCard(
+                  sessionNumber: sessionNumber,
+                  date: date,
+                  score: score,
+                  classification: classification,
+                  isCompleted: isCompleted,
+                );
+              },
             );
           },
         ),
       ),
     );
   }
+
+  String _formatDate(DateTime date) {
+    return '${date.day} / ${date.month} / ${date.year}';
+  }
 }
 
 /* ===================== SESSION CARD ===================== */
 
 class SessionCard extends StatelessWidget {
+  final int sessionNumber;
   final String date;
   final int score;
   final CognitiveClassification classification;
+  final bool isCompleted;
 
   const SessionCard({
     super.key,
+    required this.sessionNumber,
     required this.date,
     required this.score,
     required this.classification,
+    required this.isCompleted,
   });
 
   @override
@@ -72,11 +118,16 @@ class SessionCard extends StatelessWidget {
             height: 76,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(color: classification.color, width: 4),
+              border: Border.all(
+                color: isCompleted
+                    ? classification.color
+                    : Colors.grey,
+                width: 4,
+              ),
             ),
             child: Center(
               child: Text(
-                score.toString(),
+                score == 0 ? '—' : score.toString(),
                 style: Theme.of(context).textTheme.headlineMedium,
               ),
             ),
@@ -89,7 +140,18 @@ class SessionCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Date
+                // 🔢 SESSION NUMBER
+                Text(
+                  'الجلسة رقم $sessionNumber',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodyLarge
+                      ?.copyWith(fontWeight: FontWeight.bold),
+                ),
+
+                const SizedBox(height: 6),
+
+                // 📅 DATE
                 Row(
                   children: [
                     const Icon(Icons.calendar_today, size: 16),
@@ -103,37 +165,30 @@ class SessionCard extends StatelessWidget {
 
                 const SizedBox(height: 12),
 
-                // Status
+                // 🧠 STATUS
                 Text(
-                  classification.label,
+                  isCompleted
+                      ? classification.label
+                      : 'غير مكتملة',
                   style: Theme.of(context)
                       .textTheme
                       .bodyLarge
-                      ?.copyWith(color: classification.color),
+                      ?.copyWith(
+                        color: isCompleted
+                            ? classification.color
+                            : Colors.grey,
+                      ),
                 ),
 
                 const SizedBox(height: 4),
 
-                // Description
+                // 📝 DESCRIPTION
                 Text(
-                  classification.description,
+                  isCompleted
+                      ? classification.description
+                      : 'تم إنشاء الجلسة ولم يتم إكمال الاختبار',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
-
-                if (classification.requiresDoctorFollowUp) ...[
-                  const SizedBox(height: 8),
-                  Row(
-                    children: const [
-                      Icon(Icons.medical_services,
-                          size: 16, color: Colors.redAccent),
-                      SizedBox(width: 6),
-                      Text(
-                        'يوصى بالمتابعة الطبية',
-                        style: TextStyle(fontSize: 12),
-                      ),
-                    ],
-                  ),
-                ],
               ],
             ),
           ),

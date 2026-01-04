@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 import '../widgets/app_background.dart';
 import '../theme/app_theme.dart';
 import '../home/home_screen.dart';
@@ -16,6 +19,63 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
 
   int _age = 65;
   String? _gender; // male | female
+  String? _educationLevel; // school | university | less
+  bool _isSaving = false;
+
+  Future<void> _saveProfile() async {
+    if (_gender == null || _educationLevel == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('يرجى تعبئة جميع الحقول')),
+      );
+      return;
+    }
+
+    setState(() => _isSaving = true);
+
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) throw Exception('المستخدم غير مسجل');
+
+      final uid = user.uid;
+
+      final displayName =
+          _displayNameController.text.isEmpty
+              ? 'أهلاً بك'
+              : _displayNameController.text.trim();
+
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .set(
+        {
+          // بيانات البروفايل فقط
+          'displayName': displayName,
+          'age': _age,
+          'gender': _gender,
+          'educationLevel': _educationLevel,
+
+          // flags
+          'profileCompleted': true,
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true), // 🔴 مهم جداً
+      );
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => HomeScreen(username: displayName),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('حدث خطأ: $e')),
+      );
+    } finally {
+      remembering:
+      setState(() => _isSaving = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -31,17 +91,14 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // 🧠 Title
                     Text(
                       'إعداد الملف الشخصي',
                       style: Theme.of(context).textTheme.headlineMedium,
                       textAlign: TextAlign.center,
                     ),
-
                     const SizedBox(height: 8),
-
                     Text(
-                      'نحتاج هذه المعلومات لتقديم تجربة مناسبة لك',
+                      'هذه المعلومات تُدخل مرة واحدة ويمكن تعديلها لاحقًا',
                       style: Theme.of(context).textTheme.bodyMedium,
                       textAlign: TextAlign.center,
                     ),
@@ -60,7 +117,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
 
                     const SizedBox(height: 24),
 
-                    // 🎂 Age Stepper
+                    // 🎂 Age
                     NumberStepper(
                       label: 'العمر',
                       value: _age,
@@ -74,14 +131,12 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
 
                     const SizedBox(height: 24),
 
-                    // 🚻 Gender Selection
+                    // 🚻 Gender
                     Text(
                       'الجنس',
                       style: Theme.of(context).textTheme.bodyLarge,
                     ),
-
                     const SizedBox(height: 12),
-
                     Row(
                       children: [
                         Expanded(
@@ -106,26 +161,44 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                       ],
                     ),
 
+                    const SizedBox(height: 24),
+
+                    // 🎓 Education Level (NEW)
+                    Text(
+                      'المستوى التعليمي',
+                      style: Theme.of(context).textTheme.bodyLarge,
+                    ),
+                    const SizedBox(height: 8),
+
+                    RadioListTile<String>(
+                      title: const Text('أقل من الثانوية'),
+                      value: 'less',
+                      groupValue: _educationLevel,
+                      onChanged: (v) =>
+                          setState(() => _educationLevel = v),
+                    ),
+                    RadioListTile<String>(
+                      title: const Text('مدرسة'),
+                      value: 'school',
+                      groupValue: _educationLevel,
+                      onChanged: (v) =>
+                          setState(() => _educationLevel = v),
+                    ),
+                    RadioListTile<String>(
+                      title: const Text('جامعة'),
+                      value: 'university',
+                      groupValue: _educationLevel,
+                      onChanged: (v) =>
+                          setState(() => _educationLevel = v),
+                    ),
+
                     const SizedBox(height: 32),
 
-                    // ▶️ Continue
                     ElevatedButton(
-                      onPressed: () {
-                        final String displayName =
-                            _displayNameController.text.isEmpty
-                                ? 'أهلاً بك'
-                                : _displayNameController.text;
-
-                        Navigator.pushReplacement(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => HomeScreen(
-                              username: displayName,
-                            ),
-                          ),
-                        );
-                      },
-                      child: const Text('متابعة'),
+                      onPressed: _isSaving ? null : _saveProfile,
+                      child: _isSaving
+                          ? const CircularProgressIndicator()
+                          : const Text('متابعة'),
                     ),
                   ],
                 ),
@@ -138,9 +211,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   }
 }
 
-/* ========================================================= */
-/* ===================== NUMBER STEPPER ==================== */
-/* ========================================================= */
+/* ===================== NUMBER STEPPER ===================== */
 
 class NumberStepper extends StatelessWidget {
   final String label;
@@ -167,44 +238,31 @@ class NumberStepper extends StatelessWidget {
       children: [
         Text(label, style: Theme.of(context).textTheme.bodyLarge),
         const SizedBox(height: 8),
-
-        AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppTheme.primary),
-          ),
-          child: Row(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.remove),
-                onPressed: value > min ? onDecrement : null,
+        Row(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.remove),
+              onPressed: value > min ? onDecrement : null,
+            ),
+            Expanded(
+              child: Text(
+                value.toString(),
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.headlineMedium,
               ),
-              Expanded(
-                child: Text(
-                  value.toString(),
-                  textAlign: TextAlign.center,
-                  style:
-                      Theme.of(context).textTheme.headlineMedium,
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.add),
-                onPressed: value < max ? onIncrement : null,
-              ),
-            ],
-          ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.add),
+              onPressed: value < max ? onIncrement : null,
+            ),
+          ],
         ),
       ],
     );
   }
 }
 
-/* ========================================================= */
 /* ===================== GENDER OPTION ===================== */
-/* ========================================================= */
 
 class GenderOption extends StatelessWidget {
   final String label;
@@ -224,8 +282,7 @@ class GenderOption extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
+      child: Container(
         padding: const EdgeInsets.symmetric(vertical: 18),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(14),
@@ -238,37 +295,17 @@ class GenderOption extends StatelessWidget {
           color: selected
               ? AppTheme.primary.withOpacity(0.08)
               : Colors.transparent,
-          boxShadow: selected
-              ? [
-                  BoxShadow(
-                    color:
-                        AppTheme.primary.withOpacity(0.25),
-                    blurRadius: 8,
-                    offset: const Offset(0, 4),
-                  ),
-                ]
-              : [],
         ),
         child: Column(
           children: [
             Icon(
               icon,
               size: 36,
-              color: selected
-                  ? AppTheme.primary
-                  : Colors.grey,
+              color:
+                  selected ? AppTheme.primary : Colors.grey,
             ),
             const SizedBox(height: 8),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: selected
-                    ? AppTheme.primary
-                    : Colors.black,
-              ),
-            ),
+            Text(label),
           ],
         ),
       ),

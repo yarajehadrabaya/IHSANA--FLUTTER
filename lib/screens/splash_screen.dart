@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import '../../auth/login_screen.dart';
-import '../../theme/app_theme.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+
+import '../theme/app_theme.dart';
+import '../auth/auth_gate.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -14,14 +15,18 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
+    _goNext();
+  }
 
-    Future.delayed(const Duration(seconds: 2), () {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (_) => const LoginScreen(),
-        ),
-      );
-    });
+  Future<void> _goNext() async {
+    await Future.delayed(const Duration(seconds: 2));
+
+    if (!mounted) return;
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => const AuthGate()),
+    );
   }
 
   @override

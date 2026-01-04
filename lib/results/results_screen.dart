@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:ihsana/scoring/moca_result.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
+import '../scoring/moca_result.dart';
+import '../session/session_context.dart';
 
 class ResultsScreen extends StatelessWidget {
   final MocaResult result;
@@ -9,9 +13,29 @@ class ResultsScreen extends StatelessWidget {
     required this.result,
   });
 
+  Future<void> _saveResult(BuildContext context) async {
+    final user = FirebaseAuth.instance.currentUser!;
+    final sessionId = SessionContext.sessionId!;
+
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('sessions')
+        .doc(sessionId)
+        .update({
+      'moca_score': result.totalScore,
+      'risk_level': result.classification.name,
+      'is_completed': true,
+      'updated_at': FieldValue.serverTimestamp(),
+    });
+
+    SessionContext.sessionId = null;
+
+    Navigator.popUntil(context, (r) => r.isFirst);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final classification = result.classification;
     final score = result.totalScore;
 
     return Scaffold(
@@ -24,131 +48,16 @@ class ResultsScreen extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // 🔢 المجموع
-            Text(
-              '$score / 30',
-              style: const TextStyle(
-                fontSize: 48,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            // 🧠 التصنيف
-            _ClassificationBadge(classification: classification),
-
+            Text('$score / 30',
+                style:
+                    const TextStyle(fontSize: 48, fontWeight: FontWeight.bold)),
             const SizedBox(height: 32),
 
-            // 📘 الرسالة الطبية
-            Text(
-              _getMessage(classification),
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 18),
-            ),
-
-            const SizedBox(height: 40),
-
-            // 💾 حفظ الجلسة (لاحقاً)
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  // TODO: حفظ الجلسة في قاعدة البيانات
-                },
-                icon: const Icon(Icons.save),
-                label: const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 14),
-                  child: Text(
-                    'حفظ الجلسة',
-                    style: TextStyle(fontSize: 18),
-                  ),
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            // 🏠 العودة للرئيسية
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () {
-                  Navigator.popUntil(
-                    context,
-                    (route) => route.isFirst,
-                  );
-                },
-                icon: const Icon(Icons.home),
-                label: const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 14),
-                  child: Text(
-                    'العودة للرئيسية',
-                    style: TextStyle(fontSize: 18),
-                  ),
-                ),
-              ),
+            ElevatedButton(
+              onPressed: () => _saveResult(context),
+              child: const Text('إنهاء وحفظ الجلسة'),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  String _getMessage(CognitiveStatus status) {
-    switch (status) {
-      case CognitiveStatus.normal:
-        return 'النتيجة ضمن المعدل الطبيعي. لا يوجد ما يدعو للقلق حالياً.';
-      case CognitiveStatus.mci:
-        return 'توجد بعض المؤشرات التي تستدعي المتابعة مع مختص.';
-      case CognitiveStatus.dementia:
-        return 'توجد مؤشرات واضحة تتطلب مراجعة مختص في أقرب وقت.';
-    }
-  }
-}
-
-class _ClassificationBadge extends StatelessWidget {
-  final CognitiveStatus classification;
-
-  const _ClassificationBadge({
-    required this.classification,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    late Color color;
-    late String text;
-
-    switch (classification) {
-      case CognitiveStatus.normal:
-        color = Colors.green;
-        text = 'طبيعي';
-        break;
-      case CognitiveStatus.mci:
-        color = Colors.orange;
-        text = 'ضعف إدراكي بسيط';
-        break;
-      case CognitiveStatus.dementia:
-        color = Colors.red;
-        text = 'خرف';
-        break;
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 24,
-        vertical: 10,
-      ),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.15),
-        borderRadius: BorderRadius.circular(30),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: color,
-          fontSize: 22,
-          fontWeight: FontWeight.bold,
         ),
       ),
     );

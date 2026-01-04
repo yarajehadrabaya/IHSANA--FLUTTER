@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
 import '../theme/app_theme.dart';
 import '../widgets/app_background.dart';
 import '../test/test_mode_selection_screen.dart';
-
+import '../auth/login_screen.dart';
 import 'sessions_history_screen.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -74,12 +76,31 @@ class HomeScreen extends StatelessWidget {
 
                 const SizedBox(height: 16),
 
-                // ⚙️ Settings
+                // ⚙️ Settings (لاحقاً Edit Profile)
                 _SecondaryButton(
                   label: 'الإعدادات',
                   icon: Icons.settings,
                   onPressed: () {
-                    // لاحقاً: SettingsScreen
+                    // لاحقاً: Settings / Edit Profile
+                  },
+                ),
+
+                const SizedBox(height: 24),
+
+                // 🚪 Logout
+                _LogoutButton(
+                  onPressed: () async {
+                    await FirebaseAuth.instance.signOut();
+
+                    if (context.mounted) {
+                      Navigator.pushAndRemoveUntil(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const LoginScreen(),
+                        ),
+                        (route) => false,
+                      );
+                    }
                   },
                 ),
               ],
@@ -137,6 +158,32 @@ class _SecondaryButton extends StatelessWidget {
       child: OutlinedButton.icon(
         icon: Icon(icon),
         label: Text(label),
+        onPressed: onPressed,
+      ),
+    );
+  }
+}
+
+/* ====================== LOGOUT BUTTON ====================== */
+
+class _LogoutButton extends StatelessWidget {
+  final VoidCallback onPressed;
+
+  const _LogoutButton({required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        icon: const Icon(Icons.logout, color: Colors.redAccent),
+        label: const Text(
+          'تسجيل الخروج',
+          style: TextStyle(color: Colors.redAccent),
+        ),
+        style: OutlinedButton.styleFrom(
+          side: const BorderSide(color: Colors.redAccent),
+        ),
         onPressed: onPressed,
       ),
     );

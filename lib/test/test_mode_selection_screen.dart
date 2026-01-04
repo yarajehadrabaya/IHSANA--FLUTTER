@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
 import '../theme/app_theme.dart';
 import '../widgets/app_background.dart';
+import '../session/session_context.dart';
 import 'instructions_screen.dart';
 
 enum TestMode {
@@ -19,6 +23,47 @@ class TestModeSelectionScreen extends StatefulWidget {
 class _TestModeSelectionScreenState
     extends State<TestModeSelectionScreen> {
   TestMode? _selectedMode;
+  bool _loading = false;
+
+  Future<void> _startSession() async {
+    if (_selectedMode == null) return;
+
+    setState(() => _loading = true);
+
+    try {
+      final user = FirebaseAuth.instance.currentUser!;
+      final sessionsRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('sessions');
+
+      final newSession = await sessionsRef.add({
+        'capture_mode':
+            _selectedMode == TestMode.mobile ? 'جوال' : 'جهاز خارجي',
+        'is_completed': false,
+        'created_at': FieldValue.serverTimestamp(),
+        'updated_at': FieldValue.serverTimestamp(),
+        'test_version': 'MoCA 8.1',
+      });
+
+      SessionContext.sessionId = newSession.id;
+
+      if (!mounted) return;
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const InstructionsScreen(),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('حصل خطأ أثناء إنشاء الجلسة')),
+      );
+    } finally {
+      setState(() => _loading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -31,75 +76,52 @@ class _TestModeSelectionScreenState
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // 🧠 العنوان
                   Text(
                     'طريقة إجراء الاختبار',
-                    style:
-                        Theme.of(context).textTheme.headlineMedium,
+                    style: Theme.of(context).textTheme.headlineMedium,
                     textAlign: TextAlign.center,
                   ),
-
                   const SizedBox(height: 12),
-
                   Text(
                     'اختر الطريقة الأنسب لإجراء الاختبار',
-                    style:
-                        Theme.of(context).textTheme.bodyMedium,
                     textAlign: TextAlign.center,
                   ),
-
                   const SizedBox(height: 32),
 
-                  // 📱 الهاتف
                   _ModeCard(
                     icon: Icons.smartphone,
                     title: 'على الهاتف',
-                    description:
-                        'استخدام شاشة الهاتف والمايك والكاميرا',
-                    selected:
-                        _selectedMode == TestMode.mobile,
-                    onTap: () {
-                      setState(() {
-                        _selectedMode = TestMode.mobile;
-                      });
-                    },
+                    description: 'استخدام شاشة الهاتف والمايك والكاميرا',
+                    selected: _selectedMode == TestMode.mobile,
+                    onTap: () => setState(() {
+                      _selectedMode = TestMode.mobile;
+                    }),
                   ),
-
                   const SizedBox(height: 16),
 
-                  // 🧠 جهاز خارجي
                   _ModeCard(
                     icon: Icons.memory,
                     title: 'باستخدام جهاز خارجي',
-                    description:
-                        'استخدام جهاز مخصص مع كاميرا ومايك',
-                    selected:
-                        _selectedMode == TestMode.hardware,
-                    onTap: () {
-                      setState(() {
-                        _selectedMode = TestMode.hardware;
-                      });
-                    },
+                    description: 'استخدام جهاز مخصص مع كاميرا ومايك',
+                    selected: _selectedMode == TestMode.hardware,
+                    onTap: () => setState(() {
+                      _selectedMode = TestMode.hardware;
+                    }),
                   ),
-
                   const SizedBox(height: 32),
 
-                  // ▶️ متابعة
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: _selectedMode == null
-                          ? null
-                          : () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) =>
-                                      const InstructionsScreen(),
-                                ),
-                              );
-                            },
-                      child: const Text('متابعة'),
+                      onPressed:
+                          _selectedMode == null || _loading
+                              ? null
+                              : _startSession,
+                      child: _loading
+                          ? const CircularProgressIndicator(
+                              color: Colors.white,
+                            )
+                          : const Text('متابعة'),
                     ),
                   ),
                 ],
@@ -112,9 +134,7 @@ class _TestModeSelectionScreenState
   }
 }
 
-/* ========================================================= */
 /* ======================= MODE CARD ======================= */
-/* ========================================================= */
 
 class _ModeCard extends StatelessWidget {
   final IconData icon;
@@ -141,53 +161,26 @@ class _ModeCard extends StatelessWidget {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: selected
-                ? AppTheme.primary
-                : Colors.grey.shade300,
+            color: selected ? AppTheme.primary : Colors.grey.shade300,
             width: 2,
           ),
-          color: selected
-              ? AppTheme.primary.withOpacity(0.08)
-              : Colors.white,
-          boxShadow: selected
-              ? [
-                  BoxShadow(
-                    color: AppTheme.primary
-                        .withOpacity(0.25),
-                    blurRadius: 8,
-                    offset: const Offset(0, 4),
-                  )
-                ]
-              : [],
+          color:
+              selected ? AppTheme.primary.withOpacity(0.08) : Colors.white,
         ),
         child: Row(
           children: [
-            Icon(
-              icon,
-              size: 42,
-              color: selected
-                  ? AppTheme.primary
-                  : Colors.grey,
-            ),
+            Icon(icon,
+                size: 42,
+                color: selected ? AppTheme.primary : Colors.grey),
             const SizedBox(width: 16),
             Expanded(
               child: Column(
-                crossAxisAlignment:
-                    CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    title,
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodyLarge,
-                  ),
+                  Text(title),
                   const SizedBox(height: 4),
-                  Text(
-                    description,
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodySmall,
-                  ),
+                  Text(description,
+                      style: Theme.of(context).textTheme.bodySmall),
                 ],
               ),
             ),

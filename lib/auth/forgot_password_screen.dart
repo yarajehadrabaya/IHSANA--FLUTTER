@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
 import '../theme/app_theme.dart';
 import '../widgets/app_background.dart';
 
@@ -12,6 +14,9 @@ class ForgotPasswordScreen extends StatefulWidget {
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final TextEditingController _emailController = TextEditingController();
   String? _emailHint;
+
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  bool _isLoading = false;
 
   @override
   Widget build(BuildContext context) {
@@ -58,8 +63,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                       },
                       decoration: InputDecoration(
                         labelText: 'البريد الإلكتروني',
-                        prefixIcon:
-                            const Icon(Icons.email_outlined),
+                        prefixIcon: const Icon(Icons.email_outlined),
                         helperText: _emailHint,
                       ),
                     ),
@@ -68,10 +72,14 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
                     // 🔘 Send Button
                     ElevatedButton(
-                      onPressed: () {
-                        // UI فقط – لا منطق حالياً
-                      },
-                      child: const Text('إرسال رابط الاستعادة'),
+                      onPressed: _isLoading ? null : _sendResetEmail,
+                      child: _isLoading
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('إرسال رابط الاستعادة'),
                     ),
 
                     const SizedBox(height: 12),
@@ -89,6 +97,59 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /* ===================== RESET LOGIC ===================== */
+
+  Future<void> _sendResetEmail() async {
+    final email = _emailController.text.trim();
+
+    if (email.isEmpty) {
+      _showMessage('يرجى إدخال البريد الإلكتروني');
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      await _auth.sendPasswordResetEmail(email: email);
+
+      if (mounted) {
+        _showMessage(
+          'تم إرسال رابط إعادة تعيين كلمة المرور إلى بريدك الإلكتروني',
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'user-not-found') {
+        _showMessage('لا يوجد حساب مرتبط بهذا البريد');
+      } else if (e.code == 'invalid-email') {
+        _showMessage('البريد الإلكتروني غير صالح');
+      } else {
+        _showMessage('حدث خطأ، حاول مرة أخرى');
+      }
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _showMessage(String message) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('تنبيه'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('حسناً'),
+          ),
+        ],
       ),
     );
   }
