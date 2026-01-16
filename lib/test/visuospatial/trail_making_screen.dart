@@ -3,14 +3,14 @@ import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:audioplayers/audioplayers.dart'; // لتشغيل التعليمات
+import 'package:audioplayers/audioplayers.dart';
 import '../../theme/app_theme.dart';
 import '../../models/point_model.dart';
 import '../../utils/resampler.dart';
 import '../../painters/drawing_painter.dart';
-import '../../utils/moca_api_service.dart'; // للاتصال بالـ API
-import '../../utils/test_session.dart'; // لحفظ السكور
-import 'cube_copy_screen.dart'; // الانتقال للمكعب
+import '../../utils/moca_api_service.dart';
+import '../../utils/test_session.dart';
+import 'cube_copy_screen.dart';
 
 class TrailMakingScreen extends StatefulWidget {
   const TrailMakingScreen({super.key});
@@ -32,7 +32,7 @@ class _TrailMakingScreenState extends State<TrailMakingScreen> {
   void initState() {
     super.initState();
     _loadImage();
-    _playInstruction(); // ✅ تشغيل صوت tmt.mp3 فوراً عند فتح الشاشة
+    _playInstruction(); // ✅ تشغيل صوت tmt.mp3 فوراً
   }
 
   @override
@@ -41,21 +41,20 @@ class _TrailMakingScreenState extends State<TrailMakingScreen> {
     super.dispose();
   }
 
-  // 🔊 وظيفة تشغيل فويس التعليمات
   Future<void> _playInstruction() async {
     try {
-      // تم تصحيح المسار ليتوافق مع مكتبة audioplayers (بدون assets/)
+      // ✅ المسار الصحيح للمكتبة (بدون assets/)
       await _audioPlayer.play(AssetSource('audio/tmt.mp3'));
     } catch (e) {
-      debugPrint("Error playing TMT instruction: $e");
+      debugPrint("Error playing TMT audio: $e");
     }
   }
 
   Future<void> _loadImage() async {
-    // تحميل صورة النقاط الخلفية (1-أ-2-ب...)
+    // تحميل صورة النقاط الخلفية
     final data = await DefaultAssetBundle.of(
       context,
-    ).load('assets/images/trail_making.png');
+    ).load('assets/images/trail_making_a.png');
     final img = await decodeImageFromList(data.buffer.asUint8List());
     setState(() => bgImage = img);
   }
@@ -69,7 +68,7 @@ class _TrailMakingScreenState extends State<TrailMakingScreen> {
     if (startTime == null) return;
     final t = DateTime.now().difference(startTime!).inMilliseconds / 1000.0;
 
-    // ✅ النقطة الذهبية: نحسب النسب المئوية (nx, ny) لكي يعمل الكود على أي موبايل
+    // ✅ حفظ الإحداثيات المطبّعة (nx, ny) لضمان الدقة على أي شاشة
     points.add(
       DrawPoint(
         x: pos.dx,
@@ -82,13 +81,13 @@ class _TrailMakingScreenState extends State<TrailMakingScreen> {
     setState(() {});
   }
 
-  // 🚀 دالة الإرسال والتحليل والانتقال
+  // 🚀 دالة الإرسال والتحليل والانتقال للمكعب
   Future<void> _submitAndAnalyze(Size canvasSize) async {
     if (points.isEmpty) return;
 
     setState(() => _isLoading = true);
     try {
-      // 1. إعادة عينة النقاط لتقليل حجم البيانات المرسلة
+      // 1. إعادة عينة النقاط لتقليل حجم البيانات
       final resampled = resample(points, 0.05);
 
       // 2. تجهيز بيانات الـ JSON
@@ -98,21 +97,20 @@ class _TrailMakingScreenState extends State<TrailMakingScreen> {
         "points": resampled.map((e) => e.toJson()).toList(),
       };
 
-      // 3. إنشاء ملف مؤقت للإرسال
+      // 3. إنشاء ملف JSON مؤقت
       final tempDir = await getTemporaryDirectory();
       final tempFile = File('${tempDir.path}/tmt_data.json');
       await tempFile.writeAsString(jsonEncode(data));
 
-      // 4. استدعاء الـ API المجمع في ملف السيرفس
+      // 4. نداء الـ API الخاص بالتوصيل (يرسل ملف JSON)
       final result = await _apiService.checkTrails(tempFile.path);
 
       // -----------------------------------------------------------
-      // >>> [DEBUG] طباعة النتيجة في الكونسول للفحص <<<
-      debugPrint("====================================");
-      debugPrint("📊 [TMT TEST RESULT]");
+      // >>> [تحقق] طباعة النتيجة في الكونسول <<<
+      debugPrint("--- !!! TMT TEST RESULT !!! ---");
       debugPrint("Score from API: ${result['score']}");
       debugPrint("Analysis: ${result['analysis']}");
-      debugPrint("====================================");
+      debugPrint("-------------------------------");
       // -----------------------------------------------------------
 
       // ✅ حفظ النتيجة في الخزنة (نقطة واحدة)
@@ -145,7 +143,7 @@ class _TrailMakingScreenState extends State<TrailMakingScreen> {
           backgroundColor: AppTheme.background,
           appBar: AppBar(
             title: const Text('تتبّع المسار'),
-            automaticallyImplyLeading: false, // منع الرجوع للخلف
+            automaticallyImplyLeading: false,
             actions: [
               TextButton(
                 onPressed: () => Navigator.popUntil(context, (r) => r.isFirst),
@@ -163,11 +161,7 @@ class _TrailMakingScreenState extends State<TrailMakingScreen> {
                 child: Text(
                   'اربط الأرقام والحروف بالتناوب (1-أ-2-ب...) دون رفع إصبعك عن الشاشة',
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.blueGrey,
-                  ),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
               ),
               Expanded(
@@ -198,7 +192,6 @@ class _TrailMakingScreenState extends State<TrailMakingScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // زر مسح الرسم للبدء من جديد
                     OutlinedButton.icon(
                       onPressed: () {
                         setState(() {
@@ -210,23 +203,17 @@ class _TrailMakingScreenState extends State<TrailMakingScreen> {
                       label: const Text('إعادة الرسم'),
                     ),
                     const SizedBox(width: 16),
-                    // الزر الأساسي الذي يقوم بكل العمليات
                     ElevatedButton.icon(
                       onPressed: points.isEmpty || _isLoading
                           ? null
                           : () {
+                              // نأخذ حجم الـ Canvas الحالي لإرساله بدقة
                               final RenderBox box =
                                   context.findRenderObject() as RenderBox;
                               _submitAndAnalyze(box.size);
                             },
                       icon: const Icon(Icons.check_circle),
                       label: const Text('إنهاء وتحليل'),
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 24,
-                          vertical: 12,
-                        ),
-                      ),
                     ),
                   ],
                 ),
@@ -234,27 +221,10 @@ class _TrailMakingScreenState extends State<TrailMakingScreen> {
             ],
           ),
         ),
-
-        // شاشة لودينج شفافة تظهر أثناء التحليل
         if (_isLoading)
           Container(
             color: Colors.black26,
-            child: const Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(color: Colors.white),
-                  SizedBox(height: 16),
-                  Text(
-                    "جاري تحليل مسار الرسم...",
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            child: const Center(child: CircularProgressIndicator()),
           ),
       ],
     );

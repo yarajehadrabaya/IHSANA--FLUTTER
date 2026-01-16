@@ -2,9 +2,10 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
+import 'package:path_provider/path_provider.dart'; // ✅ ضروري لحفظ ملفات الهاردوير مؤقتاً
 
 class MocaApiService {
-  // الروابط الأساسية للسبيسات المدمجة (تأكدي من مطابقتها لحسابك)
+  // الروابط الأساسية للسبيسات المدمجة
   static const String langUrl =
       "https://senior-moca-moca-language-test.hf.space";
   static const String visionUrl =
@@ -21,10 +22,64 @@ class MocaApiService {
       "https://senior-moca-moca-orientation-test.hf.space";
 
   // ---------------------------------------------------------
-  // 1. قسم اللغة (Language) - سبيس مدمج
+  // 🚀 الجزء الجديد: التعامل مع الهاردوير (الرازبيري باي)
   // ---------------------------------------------------------
 
-  // التسمية (Naming) - ترسل 3 ملفات
+  /// هذه الدالة تجلب الملف من الرازبيري وترسله فوراً للـ API المطلوب
+  /// [rpiIp]: عنوان الرازبيري (مثلاً 192.168.1.15)
+  /// [taskType]: نوع المهمة "image" أو "audio"
+  /// [targetApi]: الدالة التي تريد مناداتها بعد استلام الملف (مثلاً checkClock)
+  Future<Map<String, dynamic>> processHardwareTask({
+    required String rpiIp,
+    required String taskType,
+    required String functionName,
+    String? extraParam, // لبعض الدوال مثل checkAttention تحتاج نوع الاختبار
+  }) async {
+    try {
+      // 1. طلب الملف من الرازبيري باي
+      String hwEndpoint = taskType == "image" ? "/get-image" : "/get-audio";
+      var hwResponse = await http.get(
+        Uri.parse('http://$rpiIp:8000$hwEndpoint'),
+      );
+
+      if (hwResponse.statusCode == 200) {
+        // 2. حفظ الملف المستلم مؤقتاً في ذاكرة الموبايل
+        final dir = await getTemporaryDirectory();
+        String fileName = taskType == "image"
+            ? "hw_capture.jpg"
+            : "hw_record.wav";
+        File tempFile = File('${dir.path}/$fileName');
+        await tempFile.writeAsBytes(hwResponse.bodyBytes);
+
+        // 3. توجيه الملف المستلم إلى الـ API المناسب في Hugging Face
+        switch (functionName) {
+          case 'checkClock':
+            return await checkVision(tempFile.path, "clock");
+          case 'checkCube':
+            return await checkVision(tempFile.path, "cube");
+          case 'checkNaming':
+            return await checkNaming([tempFile.path]);
+          case 'checkAttention':
+            return await checkAttention(tempFile.path, extraParam ?? "");
+          case 'checkMemory':
+            return await checkMemory(tempFile.path);
+          case 'checkFluency':
+            return await checkFluency(tempFile.path);
+          default:
+            return {"score": 0, "analysis": "مهمة غير معروفة"};
+        }
+      } else {
+        return {"score": 0, "analysis": "الرازبيري باي لم يستجب بشكل صحيح"};
+      }
+    } catch (e) {
+      return {"score": 0, "analysis": "فشل الاتصال بالهاردوير: $e"};
+    }
+  }
+
+  // ---------------------------------------------------------
+  // 1. قسم اللغة (Language)
+  // ---------------------------------------------------------
+
   Future<Map<String, dynamic>> checkNaming(List<String> audioPaths) async {
     return await _post(
       url: "$langUrl/naming",
@@ -33,7 +88,6 @@ class MocaApiService {
     );
   }
 
-  // الجملة الأولى (باسل) - ترسل ملف واحد ✅
   Future<Map<String, dynamic>> checkSentence1(String audioPath) async {
     return await _post(
       url: "$langUrl/sentence1",
@@ -42,17 +96,6 @@ class MocaApiService {
     );
   }
 
-  // ✅ دالة فحص التوصيل التتابعي (TMT) - ترسل ملف JSON
-  Future<Map<String, dynamic>> checkTrails(String jsonPath) async {
-    return await _post(
-      url: "$visionUrl/trails", // الرابط الخاص بسبيس الرؤية الموحد
-      fieldName:
-          "patient_file", // اسم الحقل المتوقع في الـ FastAPI لسؤال التوصيل
-      filePaths: [jsonPath],
-    );
-  }
-
-  // الجملة الثانية (الهر) - ترسل ملف واحد ✅
   Future<Map<String, dynamic>> checkSentence2(String audioPath) async {
     return await _post(
       url: "$langUrl/sentence2",
@@ -62,8 +105,16 @@ class MocaApiService {
   }
 
   // ---------------------------------------------------------
-  // 2. باقي الأقسام (الرؤية، الانتباه، إلخ)
+  // 2. باقي الأقسام
   // ---------------------------------------------------------
+
+  Future<Map<String, dynamic>> checkTrails(String jsonPath) async {
+    return await _post(
+      url: "$visionUrl/trails",
+      fieldName: "patient_file",
+      filePaths: [jsonPath],
+    );
+  }
 
   Future<Map<String, dynamic>> checkVision(String path, String endpoint) async {
     return await _post(
@@ -110,7 +161,6 @@ class MocaApiService {
     );
   }
 
-  // التوجه (Orientation)
   Future<Map<String, dynamic>> checkOrientation({
     required String place,
     required String city,

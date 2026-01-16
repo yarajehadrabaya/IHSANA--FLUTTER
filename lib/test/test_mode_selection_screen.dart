@@ -4,13 +4,11 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import '../theme/app_theme.dart';
 import '../widgets/app_background.dart';
-import '../session/session_context.dart';
+import '../session/session_context.dart'; // ✅ الملف الذي سيخزن الخيار
 import 'instructions_screen.dart';
 
-enum TestMode {
-  mobile,
-  hardware,
-}
+// ✅ الـ Enum موجود لتعريف الخيارات
+enum TestMode { mobile, hardware }
 
 class TestModeSelectionScreen extends StatefulWidget {
   const TestModeSelectionScreen({super.key});
@@ -20,8 +18,7 @@ class TestModeSelectionScreen extends StatefulWidget {
       _TestModeSelectionScreenState();
 }
 
-class _TestModeSelectionScreenState
-    extends State<TestModeSelectionScreen> {
+class _TestModeSelectionScreenState extends State<TestModeSelectionScreen> {
   TestMode? _selectedMode;
   bool _loading = false;
 
@@ -37,24 +34,30 @@ class _TestModeSelectionScreenState
           .doc(user.uid)
           .collection('sessions');
 
+      // 1. الحفظ في الفايربيس للتوثيق
       final newSession = await sessionsRef.add({
-        'capture_mode':
-            _selectedMode == TestMode.mobile ? 'جوال' : 'جهاز خارجي',
+        'capture_mode': _selectedMode == TestMode.mobile
+            ? 'جوال'
+            : 'جهاز خارجي',
         'is_completed': false,
         'created_at': FieldValue.serverTimestamp(),
         'updated_at': FieldValue.serverTimestamp(),
         'test_version': 'MoCA 8.1',
       });
 
+      // 2. ✅ أهم خطوة: حفظ الخيار "محلياً" في الذاكرة لتستخدمه باقي الشاشات
       SessionContext.sessionId = newSession.id;
+      SessionContext.testMode = _selectedMode; // حفظ (mobile أو hardware)
+
+      debugPrint(
+        "--- [SYSTEM] تم اختيار وضع الاختبار: ${SessionContext.testMode} ---",
+      );
 
       if (!mounted) return;
 
       Navigator.push(
         context,
-        MaterialPageRoute(
-          builder: (_) => const InstructionsScreen(),
-        ),
+        MaterialPageRoute(builder: (_) => const InstructionsScreen()),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -88,6 +91,7 @@ class _TestModeSelectionScreenState
                   ),
                   const SizedBox(height: 32),
 
+                  // بطاقة الهاتف
                   _ModeCard(
                     icon: Icons.smartphone,
                     title: 'على الهاتف',
@@ -99,10 +103,12 @@ class _TestModeSelectionScreenState
                   ),
                   const SizedBox(height: 16),
 
+                  // بطاقة الجهاز الخارجي
                   _ModeCard(
                     icon: Icons.memory,
                     title: 'باستخدام جهاز خارجي',
-                    description: 'استخدام جهاز مخصص مع كاميرا ومايك',
+                    description:
+                        'استخدام جهاز مخصص (الرايزبري باي) مع كاميرا ومايك',
                     selected: _selectedMode == TestMode.hardware,
                     onTap: () => setState(() {
                       _selectedMode = TestMode.hardware;
@@ -113,14 +119,11 @@ class _TestModeSelectionScreenState
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed:
-                          _selectedMode == null || _loading
-                              ? null
-                              : _startSession,
+                      onPressed: _selectedMode == null || _loading
+                          ? null
+                          : _startSession,
                       child: _loading
-                          ? const CircularProgressIndicator(
-                              color: Colors.white,
-                            )
+                          ? const CircularProgressIndicator(color: Colors.white)
                           : const Text('متابعة'),
                     ),
                   ),
@@ -164,23 +167,32 @@ class _ModeCard extends StatelessWidget {
             color: selected ? AppTheme.primary : Colors.grey.shade300,
             width: 2,
           ),
-          color:
-              selected ? AppTheme.primary.withOpacity(0.08) : Colors.white,
+          color: selected ? AppTheme.primary.withOpacity(0.08) : Colors.white,
         ),
         child: Row(
           children: [
-            Icon(icon,
-                size: 42,
-                color: selected ? AppTheme.primary : Colors.grey),
+            Icon(
+              icon,
+              size: 42,
+              color: selected ? AppTheme.primary : Colors.grey,
+            ),
             const SizedBox(width: 16),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title),
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                   const SizedBox(height: 4),
-                  Text(description,
-                      style: Theme.of(context).textTheme.bodySmall),
+                  Text(
+                    description,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
                 ],
               ),
             ),
