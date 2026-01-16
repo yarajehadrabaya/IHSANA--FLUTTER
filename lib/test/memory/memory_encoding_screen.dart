@@ -1,102 +1,64 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:ihsana/test/widgets/test_question_scaffold.dart';
+import 'package:audioplayers/audioplayers.dart';
+import '../attention/digit_span_forward_screen.dart';
 
 class MemoryEncodingScreen extends StatefulWidget {
   const MemoryEncodingScreen({super.key});
-
   @override
-  State<MemoryEncodingScreen> createState() =>
-      _MemoryEncodingScreenState();
+  State<MemoryEncodingScreen> createState() => _MemoryEncodingScreenState();
 }
 
-class _MemoryEncodingScreenState
-    extends State<MemoryEncodingScreen> {
-  int _playCount = 0;
+class _MemoryEncodingScreenState extends State<MemoryEncodingScreen> {
+  final AudioPlayer _player = AudioPlayer();
+  int _count = 0;
   bool _isPlaying = false;
 
-  bool get _canPlay => _playCount < 2 && !_isPlaying;
-bool get _canContinue => _playCount == 2 && !_isPlaying;
-
-  Future<void> _playWords() async {
+  Future<void> _play() async {
     setState(() {
       _isPlaying = true;
-      _playCount++;
+      _count++;
     });
-
-    // ⏱️ محاكاة تشغيل الصوت (5 ثواني)
-    await Future.delayed(const Duration(seconds: 5));
-
-    setState(() {
-      _isPlaying = false;
+    await _player.play(AssetSource('audio/memory-repeat.mp3'));
+    _player.onPlayerComplete.listen((_) {
+      if (mounted) setState(() => _isPlaying = false);
     });
+  }
+
+  @override
+  void dispose() {
+    _player.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return TestQuestionScaffold(
-      // 🧠 عنوان أوضح وأكبر
-      title: 'تعلّم وحفظ الكلمات',
-
-      // 📘 تعليمة تشرح الهدف
-      instruction:
-          'سيتم تشغيل قائمة من خمس كلمات. استمع جيداً وحاول حفظها، '
-          'سيتم إعادة الكلمات مرتين فقط.',
-
+      title: 'حفظ الكلمات',
       content: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // مسافة إضافية لإنزال المحتوى
-          const SizedBox(height: 12),
-
           Icon(
             Icons.volume_up,
-            size: 90,
-            color: _canPlay
-                ? Theme.of(context).primaryColor
-                : Colors.grey,
+            size: 80,
+            color: _isPlaying ? Colors.blue : Colors.grey,
           ),
-
-          const SizedBox(height: 28),
-
           Text(
-            'عدد مرات التشغيل: $_playCount / 2',
-            style: Theme.of(context)
-                .textTheme
-                .bodyLarge
-                ?.copyWith(fontSize: 20),
+            "مرات الاستماع: $_count / 2",
+            style: const TextStyle(fontSize: 20),
           ),
-
-          const SizedBox(height: 28),
-
-       SizedBox(
-  width: double.infinity,
-  child: ElevatedButton.icon(
-    onPressed: _canPlay ? _playWords : null,
-    icon: const Icon(Icons.play_arrow),
-    label: Padding(
-      padding: const EdgeInsets.symmetric(vertical: 14),
-      child: Text(
-        _isPlaying
-            ? 'جاري تشغيل الكلمات...'
-            : 'تشغيل قائمة الكلمات',
-        style: const TextStyle(fontSize: 18),
-        textAlign: TextAlign.center,
-      ),
-    ),
-  ),
-),
-
-
+          const SizedBox(height: 30),
+          ElevatedButton(
+            onPressed: (_count < 2 && !_isPlaying) ? _play : null,
+            child: const Text("تشغيل الكلمات"),
+          ),
         ],
       ),
-      isNextEnabled: _canContinue,
-      onNext: () {
-        // NEXT: Attention - Digit Span Forward
-      },
-      onEndSession: () {
-        Navigator.popUntil(context, (r) => r.isFirst);
-      },
+      isNextEnabled: _count == 2 && !_isPlaying,
+      onNext: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const DigitSpanForwardScreen()),
+      ),
+      onEndSession: () => Navigator.popUntil(context, (r) => r.isFirst),
     );
   }
 }

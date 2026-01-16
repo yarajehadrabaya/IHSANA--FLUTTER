@@ -1,112 +1,120 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:ihsana/test/widgets/test_question_scaffold.dart';
+import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter_sound/flutter_sound.dart';
+import 'package:path_provider/path_provider.dart';
+import '../../utils/moca_api_service.dart';
+import '../../utils/test_session.dart';
+import '../abstraction/abstraction_question_one_screen.dart';
 
 class VerbalFluencyScreen extends StatefulWidget {
   const VerbalFluencyScreen({super.key});
-
   @override
-  State<VerbalFluencyScreen> createState() =>
-      _VerbalFluencyScreenState();
+  State<VerbalFluencyScreen> createState() => _VerbalFluencyScreenState();
 }
 
-class _VerbalFluencyScreenState
-    extends State<VerbalFluencyScreen> {
-  static const int _totalSeconds = 60;
+class _VerbalFluencyScreenState extends State<VerbalFluencyScreen> {
+  int _sec = 60;
+  Timer? _t;
+  final AudioPlayer _p = AudioPlayer();
+  FlutterSoundRecorder? _r = FlutterSoundRecorder();
+  bool _isRun = false, _isFin = false, _load = false;
+  String? _path;
 
-  int _remainingSeconds = _totalSeconds;
-  Timer? _timer;
+  @override
+  void initState() {
+    super.initState();
+    _r!.openRecorder();
+    _play();
+  }
 
-  bool _isRunning = false;
-  bool _isFinished = false;
+  Future<void> _play() async {
+    await _p.play(AssetSource('audio/fluency.mp3'));
+  }
 
-  bool get _canStart => !_isRunning && !_isFinished;
-  bool get _canContinue => _isFinished;
-
-  void _startTask() {
+  Future<void> _start() async {
+    final dir = await getTemporaryDirectory();
+    _path = '${dir.path}/flu.wav';
+    await _r!.startRecorder(
+      toFile: _path,
+      codec: Codec.pcm16WAV,
+      sampleRate: 16000,
+      numChannels: 1,
+    );
     setState(() {
-      _isRunning = true;
-      _remainingSeconds = _totalSeconds;
+      _isRun = true;
+      _isFin = false;
+      _sec = 60;
     });
-
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (_remainingSeconds == 0) {
+    _t = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_sec == 0) {
         timer.cancel();
-        setState(() {
-          _isRunning = false;
-          _isFinished = true;
-        });
+        _stop();
       } else {
-        setState(() {
-          _remainingSeconds--;
-        });
+        setState(() => _sec--);
       }
     });
   }
 
+  Future<void> _stop() async {
+    await _r!.stopRecorder();
+    setState(() {
+      _isRun = false;
+      _isFin = true;
+    });
+  }
+
+  Future<void> _submit() async {
+    setState(() => _load = true);
+    final res = await MocaApiService().checkFluency(_path!);
+    TestSession.fluencyScore = res['score'] ?? 0;
+    debugPrint("--- Fluency Score: ${TestSession.fluencyScore} ---");
+    if (mounted)
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const AbstractionQuestionOneScreen()),
+      );
+  }
+
   @override
   void dispose() {
-    _timer?.cancel();
+    _t?.cancel();
+    _p.dispose();
+    _r?.closeRecorder();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return TestQuestionScaffold(
-      title: 'الطلاقة اللفظية',
-      instruction:
-          'اذكر أكبر عدد ممكن من الكلمات التي تبدأ بحرف (ف) خلال دقيقة واحدة.',
-      content: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          // ⏱️ المؤقت
-          Text(
-            'الوقت المتبقي: $_remainingSeconds ثانية',
-            style: const TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-
-          const SizedBox(height: 32),
-
-          // 🎤 بدء المهمة
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: _canStart ? _startTask : null,
-              icon: const Icon(Icons.mic),
-              label: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                child: Text(
-                  _isRunning
-                      ? 'جاري التسجيل...'
-                      : 'بدء المهمة',
-                  style: const TextStyle(fontSize: 18),
+    return Stack(
+      children: [
+        TestQuestionScaffold(
+          title: 'الطلاقة اللفظية',
+          content: Column(
+            children: [
+              Text(
+                "$_sec",
+                style: const TextStyle(
+                  fontSize: 48,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
-            ),
-          ),
-
-          const SizedBox(height: 24),
-
-          if (_isFinished)
-            const Text(
-              'انتهى الوقت وتم تسجيل الإجابة الصوتية',
-              style: TextStyle(
-                color: Colors.green,
-                fontSize: 16,
+              const SizedBox(height: 20),
+              ElevatedButton.icon(
+                onPressed: _isRun || _isFin ? null : _start,
+                icon: const Icon(Icons.mic),
+                label: const Text("ابدأ الدقيقة"),
               ),
-            ),
-        ],
-      ),
-      isNextEnabled: _canContinue,
-      onNext: () {
-        // NEXT: Abstraction
-      },
-      onEndSession: () {
-        Navigator.popUntil(context, (r) => r.isFirst);
-      },
+            ],
+          ),
+          isNextEnabled: _isFin && !_load,
+          onNext: _submit,
+          onEndSession: () => Navigator.popUntil(context, (r) => r.isFirst),
+        ),
+        if (_load) const Center(child: CircularProgressIndicator()),
+      ],
     );
   }
 }

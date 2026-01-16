@@ -1,6 +1,7 @@
   import 'package:flutter/material.dart';
   import 'package:flutter_localizations/flutter_localizations.dart';
   import 'package:ihsana/auth/login_screen.dart';
+import 'package:ihsana/test/visuospatial/cube_copy_screen.dart';
   import 'auth/auth_gate.dart';
 
   import 'theme/app_theme.dart';
@@ -15,14 +16,21 @@
   import 'package:ihsana/test/attention/digit_span_forward_screen.dart';
   import 'package:ihsana/test/attention/digit_span_backward_screen.dart';
   import 'package:ihsana/test/attention/letter_a_screen.dart';
-  import 'package:ihsana/test/language/sentence_repetition_screen.dart';
+  import 'package:ihsana/test/language/sentence_repetition_screen_one.dart';
+  import 'package:ihsana/test/language/sentence_repetition_screen_two.dart';
   import 'package:ihsana/test/language/verbal_fluency_screen.dart';
   import 'package:ihsana/test/abstraction/abstraction_question_one_screen.dart';
   import 'package:ihsana/test/memory/delayed_recall_screen.dart';
- import 'package:ihsana/test/orientation/orientation_screen.dart';
+  import 'package:ihsana/test/orientation/orientation_screen.dart';
+  import 'package:ihsana/test/abstraction/abstraction_question_one_screen.dart';
+  import 'package:ihsana/test/abstraction/abstraction_question_two_screen.dart';
+  import 'package:ihsana/test/visuospatial/trail_making_screen.dart';
+
+
 
 import 'package:ihsana/results/results_screen.dart';
 import 'package:ihsana/scoring/moca_result.dart';
+import 'pages/tmt_test_page.dart';
 
 import 'package:firebase_core/firebase_core.dart';
 
@@ -66,9 +74,12 @@ import 'package:firebase_core/firebase_core.dart';
         },
 
         theme: AppTheme.lightTheme,
-        // home: const AuthGate(),
+        // home: TrailMakingScreen(),
+        // home: CubeCopyScreen(),
+        // home: TmtTestPage(),
+        home: const AuthGate(),
             // home: const LoginScreen()
-          home: const SplashScreen(),
+          // home: const SplashScreen(),
           // home: const ProfileSetupScreen(),
           //  home: const HomeScreen(username: 'يارا'),
           //  home: const SessionsHistoryScreen(),
