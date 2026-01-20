@@ -1,12 +1,14 @@
-import '../test/test_mode_selection_screen.dart'; // استيراد الـ Enum
+import '../test/test_mode_selection_screen.dart';
 
 class SessionContext {
   static String? sessionId;
 
-  // ✅ هذا المتغير سيحمل القيمة (mobile أو hardware)
+  // وضع الاختبار
   static TestMode? testMode;
 
-  // دالة لتنظيف البيانات عند تسجيل الخروج أو انتهاء الاختبار
+  // ✅ IP الرازبيري + البورت
+  static String raspberryBaseUrl = 'http://10.82.150.111:5000';
+
   static void clear() {
     sessionId = null;
     testMode = null;

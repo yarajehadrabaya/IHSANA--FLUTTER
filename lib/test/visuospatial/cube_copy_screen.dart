@@ -23,7 +23,7 @@ class _CubeCopyScreenState extends State<CubeCopyScreen> {
 
   File? _capturedImage; // للصورة الملتقطة بالجوال
   bool _isLoading = false;
-  final String rpiIp = "192.168.1.22"; // ✅ عنوان الرازبيري الخاص بكِ
+  final String rpiIp = "192.168.1.33"; // ✅ عنوان الرازبيري الخاص بكِ
 
   @override
   void initState() {

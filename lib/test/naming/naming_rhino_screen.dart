@@ -1,152 +1,157 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:ihsana/test/widgets/test_question_scaffold.dart';
 import 'package:flutter_sound/flutter_sound.dart';
-import 'package:audioplayers/audioplayers.dart'; 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
-import '../../utils/moca_api_service.dart'; // ✅ استدعاء السيرفس
-import '../../session/session_context.dart'; // ✅ للتحقق من المود المختار
-import '../test_mode_selection_screen.dart'; // ✅ للوصول لـ TestMode
+import 'package:http/http.dart' as http;
+
+import 'package:ihsana/test/widgets/test_question_scaffold.dart';
+import '../../session/session_context.dart';
+import '../test_mode_selection_screen.dart';
 import 'naming_camel_screen.dart';
 
 class NamingRhinoScreen extends StatefulWidget {
-  final String lionAudioPath; // استلام صوت الأسد من الشاشة السابقة
+  final String lionAudioPath;
 
-  const NamingRhinoScreen({super.key, required this.lionAudioPath});
+  const NamingRhinoScreen({
+    super.key,
+    required this.lionAudioPath,
+  });
 
   @override
   State<NamingRhinoScreen> createState() => _NamingRhinoScreenState();
 }
 
 class _NamingRhinoScreenState extends State<NamingRhinoScreen> {
-  FlutterSoundRecorder? _recorder = FlutterSoundRecorder();
+  FlutterSoundRecorder? _recorder;
   final AudioPlayer _instructionPlayer = AudioPlayer();
-  final MocaApiService _apiService = MocaApiService(); // محرك الـ API
 
   bool _isRecording = false;
-  bool _isLoading = false; // لحالة الانتظار عند سحب الملف من الرايزبري
-  bool _hasRecorded = false; // للتأكد من وجود تسجيل
+  bool _isLoading = false;
   String? _rhinoPath;
-
-  // ✅ عنوان الـ IP الخاص بالرايزبري باي كما حددتِ
-  final String rpiIp = "192.168.1.22";
 
   @override
   void initState() {
     super.initState();
-    // نفتح المايكروفون فقط إذا كان المود هو الجوال
+
     if (SessionContext.testMode == TestMode.mobile) {
+      _recorder = FlutterSoundRecorder();
       _recorder!.openRecorder();
     }
+
     _playInstruction();
   }
 
   @override
   void dispose() {
-    _recorder?.closeRecorder();
     _instructionPlayer.dispose();
+    _recorder?.closeRecorder();
     super.dispose();
   }
 
   Future<void> _playInstruction() async {
-    try {
-      await _instructionPlayer.play(AssetSource('audio/naming.mp3'));
-    } catch (e) {
-      debugPrint("Error playing audio: $e");
+    await _instructionPlayer.play(
+      AssetSource('audio/naming.mp3'),
+    );
+  }
+
+  // 🎤 زر التسجيل (موحّد)
+  Future<void> _onRecordPressed() async {
+    if (SessionContext.testMode == TestMode.hardware) {
+      await _recordFromHardware();
+    } else {
+      await _recordFromMobile();
     }
   }
 
-  // 🎤 دالة التسجيل الهجينة (تختار بين مايك الجوال أو مايك الرايزبري)
-  Future<void> _handleRecordingAction() async {
-    if (SessionContext.testMode == TestMode.hardware) {
-      // 🖥️ مسار الهاردوير: طلب الصوت من الرايزبري
-      setState(() => _isLoading = true);
-      try {
-        debugPrint("--- [HARDWARE MODE] جاري طلب تسجيل وحيد القرن من الرايزبري ---");
-        await _instructionPlayer.stop();
-
-        final result = await _apiService.processHardwareTask(
-          rpiIp: rpiIp,
-          taskType: "audio",
-          functionName: "NONE", // نحتاج الملف فقط الآن لنمرره للشاشة الأخيرة
-        );
-
-        if (result.containsKey('tempPath')) {
-           setState(() {
-             _rhinoPath = result['tempPath'];
-             _hasRecorded = true;
-           });
-           debugPrint("✅ تم استلام ملف وحيد القرن من الرايزبري: $_rhinoPath");
-        }
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("خطأ في جلب الصوت من الجهاز الخارجي: $e")),
-        );
-      } finally {
-        setState(() => _isLoading = false);
-      }
+  // 📱 تسجيل من الموبايل
+  Future<void> _recordFromMobile() async {
+    if (_isRecording) {
+      final path = await _recorder!.stopRecorder();
+      setState(() {
+        _isRecording = false;
+        _rhinoPath = path;
+      });
     } else {
-      // 📱 مسار الجوال: التسجيل بالمايك الداخلي
-      if (_isRecording) {
-        final path = await _recorder!.stopRecorder();
-        setState(() {
-          _isRecording = false;
-          _rhinoPath = path;
-          _hasRecorded = true;
-        });
-      } else {
-        await _instructionPlayer.stop();
-        final dir = await getTemporaryDirectory();
-        final path = '${dir.path}/rhino_res.wav';
-        await _recorder!.startRecorder(
-          toFile: path,
-          codec: Codec.pcm16WAV,
-          sampleRate: 16000,
-          numChannels: 1,
-        );
-        setState(() {
-          _isRecording = true;
-          _rhinoPath = null;
-          _hasRecorded = false;
-        });
-      }
+      final dir = await getTemporaryDirectory();
+      final path = '${dir.path}/rhino.wav';
+
+      await _recorder!.startRecorder(
+        toFile: path,
+        codec: Codec.pcm16WAV,
+        sampleRate: 16000,
+        numChannels: 1,
+      );
+
+      setState(() {
+        _isRecording = true;
+        _rhinoPath = null;
+      });
+    }
+  }
+
+  // 🖥️ تسجيل من Raspberry Pi (نفس lion)
+  Future<void> _recordFromHardware() async {
+    setState(() => _isLoading = true);
+
+    try {
+      final baseUrl = SessionContext.raspberryBaseUrl;
+
+      // 1️⃣ اطلب التسجيل
+      await http.post(Uri.parse('$baseUrl/record'));
+
+      // 2️⃣ حمّل الملف
+      final res = await http.get(Uri.parse('$baseUrl/audio'));
+
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/rhino_hw.wav');
+      await file.writeAsBytes(res.bodyBytes);
+
+      setState(() {
+        _rhinoPath = file.path;
+      });
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('خطأ في التسجيل الخارجي: $e')),
+      );
+    } finally {
+      setState(() => _isLoading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    bool isHardware = SessionContext.testMode == TestMode.hardware;
-
     return Stack(
       children: [
         TestQuestionScaffold(
-          title: 'ما هذا الحيوان؟',
-          instruction: isHardware 
-              ? 'انطق اسم الحيوان في ميكروفون الجهاز الخارجي.' 
-              : 'استمع للجملة جيداً ثم سجل إجابة وحيد القرن.',
+          title: 'تسمية الحيوانات',
+          instruction: 'ما اسم هذا الحيوان؟',
           content: Column(
             children: [
-              Image.asset('assets/images/rhino.png', height: 200),
-              const SizedBox(height: 24),
-              
-              // زر التسجيل يتغير شكله ولونه حسب المود المختار
-              ElevatedButton.icon(
-                onPressed: _isLoading ? null : _handleRecordingAction,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _isRecording ? Colors.red : (isHardware ? Colors.orange : Colors.blue),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                ),
-                icon: Icon(isHardware ? Icons.settings_input_component : (_isRecording ? Icons.stop : Icons.mic)),
-                label: Text(isHardware 
-                    ? "طلب تسجيل وحيد القرن من الجهاز" 
-                    : (_isRecording ? 'إيقاف التسجيل' : 'تسجيل إجابة وحيد القرن')),
+              Image.asset(
+                'assets/images/rhino.png',
+                height: 200,
               ),
-              
+              const SizedBox(height: 24),
+
+              ElevatedButton.icon(
+                onPressed: _isLoading ? null : _onRecordPressed,
+                icon: Icon(_isRecording ? Icons.stop : Icons.mic),
+                label: Text(
+                  _isRecording ? 'إيقاف التسجيل' : 'تسجيل الإجابة',
+                ),
+              ),
+
               const SizedBox(height: 16),
-              if (_hasRecorded && !_isRecording)
-                const Text("✅ تم تجهيز تسجيل وحيد القرن", 
-                  style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+
+              if (_rhinoPath != null && !_isRecording)
+                const Text(
+                  '✅ تم تسجيل الإجابة',
+                  style: TextStyle(
+                    color: Colors.green,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
             ],
           ),
           isNextEnabled: _rhinoPath != null && !_isRecording && !_isLoading,
@@ -156,16 +161,16 @@ class _NamingRhinoScreenState extends State<NamingRhinoScreen> {
               context,
               MaterialPageRoute(
                 builder: (_) => NamingCamelScreen(
-                  lionPath: widget.lionAudioPath, // تمرير مسار الأسد المستلم
-                  rhinoPath: _rhinoPath!,         // تمرير مسار وحيد القرن الجديد
+                  lionPath: widget.lionAudioPath,
+                  rhinoPath: _rhinoPath!,
                 ),
               ),
             );
           },
-          onEndSession: () => Navigator.popUntil(context, (r) => r.isFirst),
+          onEndSession: () =>
+              Navigator.popUntil(context, (r) => r.isFirst),
         ),
-        
-        // شاشة انتظار شفافة تظهر عند سحب الملف من الرايزبري
+
         if (_isLoading)
           Container(
             color: Colors.black26,
@@ -174,8 +179,11 @@ class _NamingRhinoScreenState extends State<NamingRhinoScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text("جاري معالجة الصوت...", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  SizedBox(height: 12),
+                  Text(
+                    'جاري التسجيل من الجهاز...',
+                    style: TextStyle(color: Colors.white),
+                  ),
                 ],
               ),
             ),

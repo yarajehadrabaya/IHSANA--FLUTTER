@@ -54,7 +54,7 @@ class _TrailMakingScreenState extends State<TrailMakingScreen> {
     // تحميل صورة النقاط الخلفية
     final data = await DefaultAssetBundle.of(
       context,
-    ).load('assets/images/trail_making_a.png');
+    ).load('assets/images/trail_making.png');
     final img = await decodeImageFromList(data.buffer.asUint8List());
     setState(() => bgImage = img);
   }
