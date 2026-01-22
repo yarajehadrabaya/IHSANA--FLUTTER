@@ -5,9 +5,9 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 
-import 'package:ihsana/test/widgets/test_question_scaffold.dart';
 import '../../session/session_context.dart';
 import '../test_mode_selection_screen.dart';
+import '../widgets/test_question_scaffold.dart';
 import 'naming_rhino_screen.dart';
 
 class NamingLionScreen extends StatefulWidget {
@@ -30,8 +30,7 @@ class _NamingLionScreenState extends State<NamingLionScreen> {
     super.initState();
 
     if (SessionContext.testMode == TestMode.mobile) {
-      _recorder = FlutterSoundRecorder();
-      _recorder!.openRecorder();
+      _recorder = FlutterSoundRecorder()..openRecorder();
     }
 
     _playInstruction();
@@ -45,21 +44,23 @@ class _NamingLionScreenState extends State<NamingLionScreen> {
   }
 
   Future<void> _playInstruction() async {
-    await _instructionPlayer.play(
-      AssetSource('audio/naming.mp3'),
-    );
+    await _instructionPlayer.play(AssetSource('audio/naming.mp3'));
   }
 
-  // 🎤 زر التسجيل (نفسه للموبايل والهاردوير)
+  // ================= 🎛 RECORD BUTTON =================
   Future<void> _onRecordPressed() async {
     if (SessionContext.testMode == TestMode.hardware) {
-      await _recordFromHardware();
+      if (_isRecording) {
+        await _stopHardwareRecording();
+      } else {
+        await _startHardwareRecording();
+      }
     } else {
       await _recordFromMobile();
     }
   }
 
-  // 📱 تسجيل من موبايل
+  // ================= 📱 MOBILE =================
   Future<void> _recordFromMobile() async {
     if (_isRecording) {
       final path = await _recorder!.stopRecorder();
@@ -69,10 +70,10 @@ class _NamingLionScreenState extends State<NamingLionScreen> {
       });
     } else {
       final dir = await getTemporaryDirectory();
-      final path = '${dir.path}/lion.wav';
+      await _instructionPlayer.stop();
 
       await _recorder!.startRecorder(
-        toFile: path,
+        toFile: '${dir.path}/lion_mobile.wav',
         codec: Codec.pcm16WAV,
         sampleRate: 16000,
         numChannels: 1,
@@ -85,55 +86,85 @@ class _NamingLionScreenState extends State<NamingLionScreen> {
     }
   }
 
-  // 🖥️ تسجيل من Raspberry Pi
-  Future<void> _recordFromHardware() async {
+  // ================= 🖥️ HARDWARE =================
+  Future<void> _startHardwareRecording() async {
+    setState(() {
+      _isRecording = true;
+      _lionPath = null;
+    });
+
+    await _instructionPlayer.stop();
+
+    final uri =
+        Uri.parse('${SessionContext.raspberryBaseUrl}/start-recording');
+
+    await http.post(uri);
+  }
+
+  Future<void> _stopHardwareRecording() async {
     setState(() => _isLoading = true);
 
     try {
-      final baseUrl = SessionContext.raspberryBaseUrl;
+      final stopUri =
+          Uri.parse('${SessionContext.raspberryBaseUrl}/stop-recording');
+      await http.post(stopUri);
 
-      // 1️⃣ اطلب التسجيل
-      await http.post(Uri.parse('$baseUrl/record'));
+      final getUri =
+          Uri.parse('${SessionContext.raspberryBaseUrl}/get-audio');
+      final res = await http.get(getUri);
 
-      // 2️⃣ حمّل الملف
-      final res = await http.get(Uri.parse('$baseUrl/audio'));
+      if (res.statusCode == 200) {
+        final dir = await getTemporaryDirectory();
+        final file = File('${dir.path}/lion_hw.wav');
+        await file.writeAsBytes(res.bodyBytes);
 
-      final dir = await getTemporaryDirectory();
-      final file = File('${dir.path}/lion_hw.wav');
-      await file.writeAsBytes(res.bodyBytes);
-
-      setState(() {
-        _lionPath = file.path;
-      });
+        setState(() {
+          _lionPath = file.path;
+          _isRecording = false;
+        });
+      } else {
+        throw Exception('Hardware error');
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('خطأ في التسجيل الخارجي: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('فشل التسجيل من الجهاز الخارجي')),
+        );
+      }
+      setState(() => _isRecording = false);
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
+  // ================= UI =================
   @override
   Widget build(BuildContext context) {
     return Stack(
       children: [
         TestQuestionScaffold(
           title: 'تسمية الحيوانات',
-          instruction: 'ما اسم هذا الحيوان؟',
+          instruction: SessionContext.testMode == TestMode.hardware
+              ? 'انطق اسم الحيوان في ميكروفون الجهاز'
+              : 'ما اسم هذا الحيوان؟',
           content: Column(
             children: [
-              Image.asset(
-                'assets/images/lion.png',
-                height: 200,
-              ),
+              Image.asset('assets/images/lion.png', height: 200),
               const SizedBox(height: 24),
 
               ElevatedButton.icon(
                 onPressed: _isLoading ? null : _onRecordPressed,
-                icon: Icon(_isRecording ? Icons.stop : Icons.mic),
+                icon: Icon(
+                  SessionContext.testMode == TestMode.hardware
+                      ? (_isRecording ? Icons.stop : Icons.memory)
+                      : (_isRecording ? Icons.stop : Icons.mic),
+                ),
                 label: Text(
                   _isRecording ? 'إيقاف التسجيل' : 'تسجيل الإجابة',
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _isRecording ? Colors.red : null,
+                  foregroundColor: _isRecording ? Colors.white : null,
                 ),
               ),
 
@@ -141,11 +172,9 @@ class _NamingLionScreenState extends State<NamingLionScreen> {
 
               if (_lionPath != null && !_isRecording)
                 const Text(
-                  '✅ تم تسجيل الإجابة',
-                  style: TextStyle(
-                    color: Colors.green,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  '✅ تم تسجيل إجابة الأسد',
+                  style:
+                      TextStyle(color: Colors.green, fontWeight: FontWeight.bold),
                 ),
             ],
           ),
@@ -161,24 +190,14 @@ class _NamingLionScreenState extends State<NamingLionScreen> {
             );
           },
           onEndSession: () =>
-              Navigator.popUntil(context, (r) => r.isFirst),
+              Navigator.popUntil(context, (route) => route.isFirst),
         ),
 
         if (_isLoading)
           Container(
             color: Colors.black26,
             child: const Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 12),
-                  Text(
-                    'جاري التسجيل من الجهاز...',
-                    style: TextStyle(color: Colors.white),
-                  ),
-                ],
-              ),
+              child: CircularProgressIndicator(),
             ),
           ),
       ],

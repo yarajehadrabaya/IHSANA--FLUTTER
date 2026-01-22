@@ -50,7 +50,7 @@ class _OrientationLocationScreenState
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => const NamingLionScreen(),
+          builder: (_) => const CubeCopyScreen(),
         ),
       );
     } catch (e) {
