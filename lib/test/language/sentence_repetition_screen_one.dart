@@ -4,9 +4,13 @@ import 'package:ihsana/test/widgets/test_question_scaffold.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter_sound/flutter_sound.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart' as http;
+
 import '../../utils/moca_api_service.dart';
 import '../../utils/test_session.dart';
-import 'sentence_repetition_screen_two.dart'; // الانتقال للجملة الثانية
+import '../../session/session_context.dart';
+import '../test_mode_selection_screen.dart';
+import 'sentence_repetition_screen_two.dart';
 
 class SentenceRepetitionOneScreen extends StatefulWidget {
   const SentenceRepetitionOneScreen({super.key});
@@ -18,140 +22,230 @@ class SentenceRepetitionOneScreen extends StatefulWidget {
 
 class _SentenceRepetitionOneScreenState
     extends State<SentenceRepetitionOneScreen> {
-  final AudioPlayer _p = AudioPlayer();
-  FlutterSoundRecorder? _r = FlutterSoundRecorder();
+  final AudioPlayer _instructionPlayer = AudioPlayer();
+  FlutterSoundRecorder? _recorder;
   final MocaApiService _apiService = MocaApiService();
 
-  bool _isRec = false;
-  bool _hasRec = false;
-  bool _load = false;
-  bool _isPlay = false;
-  String? _path;
+  bool _isRecording = false;
+  bool _hasRecorded = false;
+  bool _isLoading = false;
+  bool _isPlaying = false;
+  String? _audioPath;
 
   @override
   void initState() {
     super.initState();
-    _initRecorder();
-    _playInstruction(); // تشغيل الجملة فور فتح الشاشة
+
+    if (SessionContext.testMode == TestMode.mobile) {
+      _recorder = FlutterSoundRecorder()..openRecorder();
+    }
+
+    _playInstruction();
   }
 
   @override
   void dispose() {
-    _p.dispose();
-    _r?.closeRecorder();
+    _instructionPlayer.dispose();
+    _recorder?.closeRecorder();
     super.dispose();
   }
 
-  Future<void> _initRecorder() async {
-    await _r!.openRecorder();
-  }
-
-  // 🔊 تشغيل ملف sentance1.mp3
+  // 🔊 تشغيل الجملة
   Future<void> _playInstruction() async {
     try {
-      setState(() => _isPlay = true);
-      await _p.play(AssetSource('audio/sentance1.mp3'));
-      _p.onPlayerComplete.listen((_) {
-        if (mounted) setState(() => _isPlay = false);
+      setState(() => _isPlaying = true);
+      await _instructionPlayer.play(
+        AssetSource('audio/sentance1.mp3'),
+      );
+      _instructionPlayer.onPlayerComplete.listen((_) {
+        if (mounted) setState(() => _isPlaying = false);
       });
     } catch (e) {
-      debugPrint("Error playing audio: $e");
-      setState(() => _isPlay = false);
+      debugPrint("Audio error: $e");
+      setState(() => _isPlaying = false);
     }
   }
 
-  // 🎤 تسجيل إعادة المريض
-  Future<void> _handleRecording() async {
-    if (_isRec) {
-      _path = await _r!.stopRecorder();
+  // 🎤 زر التسجيل الموحد
+  Future<void> _onRecordPressed() async {
+    if (SessionContext.testMode == TestMode.hardware) {
+      await _recordFromHardware();
+    } else {
+      await _recordFromMobile();
+    }
+  }
+
+  // ================= 📱 MOBILE =================
+  Future<void> _recordFromMobile() async {
+    if (_isRecording) {
+      final path = await _recorder!.stopRecorder();
       setState(() {
-        _isRec = false;
-        _hasRec = true;
+        _isRecording = false;
+        _hasRecorded = true;
+        _audioPath = path;
       });
+      debugPrint("✅ Sentence 1 mobile recorded: $path");
     } else {
       final dir = await getTemporaryDirectory();
-      _path = '${dir.path}/s1_res.wav';
-      await _r!.startRecorder(
-        toFile: _path,
+      await _instructionPlayer.stop();
+
+      await _recorder!.startRecorder(
+        toFile: '${dir.path}/sentence1_mobile.wav',
         codec: Codec.pcm16WAV,
         sampleRate: 16000,
         numChannels: 1,
       );
+
       setState(() {
-        _isRec = true;
-        _hasRec = false;
+        _isRecording = true;
+        _hasRecorded = false;
+        _audioPath = null;
       });
+      debugPrint("🎙️ Sentence 1 mobile recording started");
     }
   }
 
-  // 🚀 تحليل الجملة الأولى بالـ API
-  Future<void> _submit() async {
-    setState(() => _load = true);
+  // ================= 🖥️ HARDWARE =================
+  Future<void> _recordFromHardware() async {
+    setState(() => _isLoading = true);
+    await _instructionPlayer.stop();
+
     try {
-      final res = await _apiService.checkSentence1(_path!);
+      final uri =
+          Uri.parse('${SessionContext.raspberryBaseUrl}/get-audio');
+      debugPrint("[HARDWARE] Requesting sentence 1 audio from $uri");
 
-      // ✅ [تحقق] طباعة النتيجة في الكونسول
-      debugPrint("--- SENTENCE 1 RESULT: ${res['score']} ---");
-      debugPrint("AI Analysis: ${res['analysis']}");
+      final res = await http.get(uri).timeout(
+            const Duration(seconds: 20),
+          );
 
-      // حفظ السكور في الخزنة
-      TestSession.sentence1Score = (res['score'] as int? ?? 0);
+      if (res.statusCode != 200) {
+        throw Exception("Hardware error ${res.statusCode}");
+      }
 
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/sentence1_hw.wav');
+      await file.writeAsBytes(res.bodyBytes);
+
+      setState(() {
+        _audioPath = file.path;
+        _hasRecorded = true;
+      });
+
+      debugPrint("✅ Sentence 1 audio received from hardware");
+    } catch (e) {
+      debugPrint("❌ Hardware error: $e");
       if (mounted) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => const SentenceRepetitionTwoScreen(),
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('خطأ في التسجيل من الجهاز الخارجي'),
           ),
         );
       }
-    } catch (e) {
-      debugPrint("Error: $e");
     } finally {
-      if (mounted) setState(() => _load = false);
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  // ================= 🚀 SUBMIT =================
+  Future<void> _submit() async {
+    if (_audioPath == null) return;
+
+    setState(() => _isLoading = true);
+    try {
+      final res = await _apiService.checkSentence1(_audioPath!);
+
+      TestSession.sentence1Score = res['score'] ?? 0;
+
+      debugPrint("=================================");
+      debugPrint("🧠 SENTENCE 1 RESULT");
+      debugPrint("Score: ${res['score']}");
+      debugPrint("Analysis: ${res['analysis']}");
+      debugPrint("=================================");
+
+      if (!mounted) return;
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const SentenceRepetitionTwoScreen(),
+        ),
+      );
+    } catch (e) {
+      debugPrint("Submit error: $e");
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final bool isHardware = SessionContext.testMode == TestMode.hardware;
+
     return Stack(
       children: [
         TestQuestionScaffold(
           title: 'تكرار الجملة (1/2)',
-          instruction: 'استمع للجملة جيداً ثم أعدها كما سمعتها تماماً.',
+          instruction: isHardware
+              ? 'استمع للجملة ثم أعدها بوضوح في ميكروفون الجهاز.'
+              : 'استمع للجملة ثم أعدها كما سمعتها.',
           content: Column(
             children: [
-              const SizedBox(height: 30),
               ElevatedButton.icon(
-                onPressed: _isPlay ? null : _playInstruction,
+                onPressed: _isPlaying ? null : _playInstruction,
                 icon: const Icon(Icons.volume_up),
-                label: Text(
-                  _isPlay ? 'جاري التشغيل...' : 'سماع الجملة مرة أخرى',
-                ),
+                label: const Text('سماع الجملة'),
               ),
-              const SizedBox(height: 40),
+              const SizedBox(height: 30),
+
               ElevatedButton.icon(
-                onPressed: _isPlay ? null : _handleRecording,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _isRec ? Colors.red : Colors.blue,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.all(15),
+                onPressed:
+                    (_isPlaying || _isLoading) ? null : _onRecordPressed,
+                icon: Icon(
+                  isHardware
+                      ? Icons.settings_remote
+                      : (_isRecording ? Icons.stop : Icons.mic),
                 ),
-                icon: Icon(_isRec ? Icons.stop : Icons.mic),
-                label: Text(_isRec ? "إيقاف التسجيل" : "سجّل إعادتك للجملة"),
+                label: Text(
+                  isHardware
+                      ? 'التقاط الصوت من الجهاز'
+                      : (_isRecording
+                          ? 'إيقاف التسجيل'
+                          : 'تسجيل الإجابة'),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor:
+                      _isRecording ? Colors.red : Colors.blue,
+                  foregroundColor: Colors.white,
+                ),
               ),
-              if (_hasRec && !_isRec)
-                const Padding(
-                  padding: EdgeInsets.all(12),
-                  child: Text("✅ تم تسجيل الإجابة"),
+
+              const SizedBox(height: 16),
+
+              if (_hasRecorded && !_isRecording)
+                const Text(
+                  '✅ تم تسجيل الإجابة',
+                  style: TextStyle(
+                    color: Colors.green,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
             ],
           ),
-          isNextEnabled: _hasRec && !_isRec && !_load,
+          isNextEnabled:
+              _hasRecorded && !_isRecording && !_isLoading,
           onNext: _submit,
-          onEndSession: () => Navigator.popUntil(context, (r) => r.isFirst),
+          onEndSession: () =>
+              Navigator.popUntil(context, (r) => r.isFirst),
         ),
-        if (_load) const Center(child: CircularProgressIndicator()),
+
+        if (_isLoading)
+          Container(
+            color: Colors.black26,
+            child: const Center(
+              child: CircularProgressIndicator(),
+            ),
+          ),
       ],
     );
   }

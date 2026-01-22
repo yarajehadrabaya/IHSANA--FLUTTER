@@ -4,72 +4,173 @@ import 'package:ihsana/test/widgets/test_question_scaffold.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter_sound/flutter_sound.dart';
 import 'package:path_provider/path_provider.dart';
+
+import '../../session/session_context.dart';
+import '../test_mode_selection_screen.dart';
 import '../../utils/moca_api_service.dart';
 import '../../utils/test_session.dart';
 import 'digit_span_backward_screen.dart';
 
 class DigitSpanForwardScreen extends StatefulWidget {
   const DigitSpanForwardScreen({super.key});
+
   @override
-  State<DigitSpanForwardScreen> createState() => _DigitSpanForwardScreenState();
+  State<DigitSpanForwardScreen> createState() =>
+      _DigitSpanForwardScreenState();
 }
 
 class _DigitSpanForwardScreenState extends State<DigitSpanForwardScreen> {
-  final AudioPlayer _p = AudioPlayer();
-  FlutterSoundRecorder? _r = FlutterSoundRecorder();
-  bool _isRec = false, _hasRec = false, _load = false, _isPlay = false;
-  String? _path;
+  final AudioPlayer _instructionPlayer = AudioPlayer();
+  FlutterSoundRecorder? _recorder;
+  final MocaApiService _apiService = MocaApiService();
+
+  bool _isRecording = false;
+  bool _isLoading = false;
+  bool _isPlaying = false;
+  String? _recordedPath;
 
   @override
   void initState() {
     super.initState();
-    _r!.openRecorder();
-    _play();
+
+    // 📱 فتح المايك فقط في وضع الجوال
+    if (SessionContext.testMode == TestMode.mobile) {
+      _recorder = FlutterSoundRecorder()..openRecorder();
+    }
+
+    _playInstruction();
   }
 
-  Future<void> _play() async {
-    setState(() => _isPlay = true);
-    await _p.play(AssetSource('audio/forword.mp3')); // تطابق مع اسم ملفك
-    _p.onPlayerComplete.listen((_) {
-      if (mounted) setState(() => _isPlay = false);
+  // 🔊 تشغيل الأرقام
+  Future<void> _playInstruction() async {
+    setState(() => _isPlaying = true);
+    await _instructionPlayer.play(
+      AssetSource('audio/forword.mp3'),
+    );
+    _instructionPlayer.onPlayerComplete.listen((_) {
+      if (mounted) setState(() => _isPlaying = false);
     });
   }
 
-  Future<void> _rec() async {
-    if (_isRec) {
-      _path = await _r!.stopRecorder();
+  // 🎤 زر التسجيل الموحد
+  Future<void> _onRecordPressed() async {
+    if (SessionContext.testMode == TestMode.hardware) {
+      await _recordFromHardware();
+    } else {
+      await _recordFromMobile();
+    }
+  }
+
+  // ================= 📱 MOBILE =================
+  Future<void> _recordFromMobile() async {
+    if (_isRecording) {
+      final path = await _recorder!.stopRecorder();
       setState(() {
-        _isRec = false;
-        _hasRec = true;
+        _isRecording = false;
+        _recordedPath = path;
       });
+      debugPrint("✅ Forward mobile record stopped: $path");
     } else {
       final dir = await getTemporaryDirectory();
-      await _r!.startRecorder(
-        toFile: '${dir.path}/fwd.wav',
+      await _recorder!.startRecorder(
+        toFile: '${dir.path}/digits_forward_mobile.wav',
         codec: Codec.pcm16WAV,
         sampleRate: 16000,
         numChannels: 1,
       );
       setState(() {
-        _isRec = true;
+        _isRecording = true;
+        _recordedPath = null;
       });
+      debugPrint("🎙️ Forward mobile recording started...");
     }
   }
 
+  // ================= 🖥️ HARDWARE =================
+  Future<void> _recordFromHardware() async {
+    setState(() => _isLoading = true);
+
+    try {
+      final uri = Uri.parse('${SessionContext.raspberryBaseUrl}/get-audio');
+      debugPrint("[HARDWARE] Requesting forward audio from $uri");
+
+      final res = await HttpClient()
+          .getUrl(uri)
+          .then((req) => req.close());
+
+      if (res.statusCode != 200) {
+        throw Exception("Hardware error ${res.statusCode}");
+      }
+
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/digits_forward_hw.wav');
+      final bytes = await consolidateHttpClientResponseBytes(res);
+      await file.writeAsBytes(bytes);
+
+      setState(() {
+        _recordedPath = file.path;
+      });
+
+      debugPrint("✅ Hardware forward audio received");
+    } catch (e) {
+      debugPrint("❌ Forward hardware error: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('خطأ في التسجيل من الجهاز الخارجي'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  // ================= 🚀 SUBMIT =================
   Future<void> _submit() async {
-    setState(() => _load = true);
-    final res = await MocaApiService().checkAttention(_path!, "digits-forward");
-    TestSession.forwardScore = res['score'] ?? 0;
-    debugPrint("--- Forward Score: ${TestSession.forwardScore} ---");
-    if (mounted)
+    if (_recordedPath == null) return;
+
+    setState(() => _isLoading = true);
+    try {
+      final result = await _apiService.checkAttention(
+        _recordedPath!,
+        "digits-forward",
+      );
+
+      TestSession.forwardScore = result['score'] ?? 0;
+
+      debugPrint("=================================");
+      debugPrint("🧠 DIGIT SPAN FORWARD RESULT");
+      debugPrint("Score: ${result['score']}");
+      debugPrint("Analysis: ${result['analysis']}");
+      debugPrint("=================================");
+
+      if (!mounted) return;
+
       Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => const DigitSpanBackwardScreen()),
+        MaterialPageRoute(
+          builder: (_) => const DigitSpanBackwardScreen(),
+        ),
       );
+    } catch (e) {
+      debugPrint("Submit error: $e");
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _instructionPlayer.dispose();
+    _recorder?.closeRecorder();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final bool isHardware = SessionContext.testMode == TestMode.hardware;
+
     return Stack(
       children: [
         TestQuestionScaffold(
@@ -77,27 +178,59 @@ class _DigitSpanForwardScreenState extends State<DigitSpanForwardScreen> {
           content: Column(
             children: [
               ElevatedButton.icon(
-                onPressed: _isPlay ? null : _play,
+                onPressed: _isPlaying ? null : _playInstruction,
                 icon: const Icon(Icons.volume_up),
                 label: const Text("سماع الأرقام"),
               ),
+
               const SizedBox(height: 20),
+
               ElevatedButton.icon(
-                onPressed: _isPlay ? null : _rec,
-                icon: Icon(_isRec ? Icons.stop : Icons.mic),
-                label: Text(_isRec ? "إيقاف" : "تسجيل إجابتك"),
+                onPressed: (_isLoading || _isPlaying)
+                    ? null
+                    : _onRecordPressed,
+                icon: Icon(
+                  isHardware
+                      ? Icons.settings_remote
+                      : (_isRecording ? Icons.stop : Icons.mic),
+                ),
+                label: Text(
+                  isHardware
+                      ? 'التقاط الصوت من الجهاز'
+                      : (_isRecording ? 'إيقاف التسجيل' : 'تسجيل إجابتك'),
+                ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: _isRec ? Colors.red : Colors.blue,
+                  backgroundColor: _isRecording ? Colors.red : Colors.blue,
                   foregroundColor: Colors.white,
                 ),
               ),
+
+              const SizedBox(height: 16),
+
+              if (_recordedPath != null && !_isRecording)
+                const Text(
+                  '✅ تم تسجيل الإجابة',
+                  style: TextStyle(
+                    color: Colors.green,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
             ],
           ),
-          isNextEnabled: _hasRec && !_isRec && !_load,
+          isNextEnabled:
+              _recordedPath != null && !_isRecording && !_isLoading,
           onNext: _submit,
-          onEndSession: () => Navigator.popUntil(context, (r) => r.isFirst),
+          onEndSession: () =>
+              Navigator.popUntil(context, (r) => r.isFirst),
         ),
-        if (_load) const Center(child: CircularProgressIndicator()),
+
+        if (_isLoading)
+          Container(
+            color: Colors.black26,
+            child: const Center(
+              child: CircularProgressIndicator(),
+            ),
+          ),
       ],
     );
   }
