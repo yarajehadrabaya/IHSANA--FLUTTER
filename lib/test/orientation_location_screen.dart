@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:ihsana/test/naming/naming_lion_screen.dart';
 import 'package:ihsana/test/visuospatial/trail_making_screen.dart';
 
 import '../theme/app_theme.dart';
@@ -49,7 +50,7 @@ class _OrientationLocationScreenState
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => const TrailMakingScreen(),
+          builder: (_) => const CubeCopyScreen(),
         ),
       );
     } catch (e) {

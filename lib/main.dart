@@ -1,6 +1,7 @@
   import 'package:flutter/material.dart';
   import 'package:flutter_localizations/flutter_localizations.dart';
   import 'package:ihsana/auth/login_screen.dart';
+import 'package:ihsana/test/naming/naming_lion_screen.dart';
 import 'package:ihsana/test/visuospatial/cube_copy_screen.dart';
   import 'auth/auth_gate.dart';
 
@@ -77,8 +78,9 @@ import 'package:firebase_core/firebase_core.dart';
         // home: TrailMakingScreen(),
         // home: CubeCopyScreen(),
         // home: TmtTestPage(),
+        // home: NamingLionScreen(),
         home: const AuthGate(),
-            // home: const LoginScreen()
+          // home: const LoginScreen()
           // home: const SplashScreen(),
           // home: const ProfileSetupScreen(),
           //  home: const HomeScreen(username: 'يارا'),
