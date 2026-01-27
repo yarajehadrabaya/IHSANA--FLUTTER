@@ -1,14 +1,15 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:ihsana/test/widgets/test_question_scaffold.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter_sound/flutter_sound.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart' as http;
 
 import '../../session/session_context.dart';
 import '../test_mode_selection_screen.dart';
 import '../../utils/moca_api_service.dart';
 import '../../utils/test_session.dart';
+import '../../test/widgets/test_question_scaffold.dart';
 import 'abstraction_question_two_screen.dart';
 
 class AbstractionQuestionOneScreen extends StatefulWidget {
@@ -27,37 +28,26 @@ class _AbstractionQuestionOneScreenState
 
   bool _isRecording = false;
   bool _isLoading = false;
+  bool _hwRecording = false;
+
   String? _recordedPath;
 
   @override
   void initState() {
     super.initState();
 
-    // 📱 نفتح المايك فقط في وضع الجوال
     if (SessionContext.testMode == TestMode.mobile) {
       _recorder = FlutterSoundRecorder()..openRecorder();
     }
 
-    _playInstruction();
+    _instructionPlayer.play(AssetSource('audio/abstraction1.mp3'));
   }
 
-  Future<void> _playInstruction() async {
-    try {
-      await _instructionPlayer.play(
-        AssetSource('audio/abstraction1.mp3'),
-      );
-    } catch (e) {
-      debugPrint("Instruction audio error: $e");
-    }
-  }
-
-  // 🎤 زر التسجيل الموحد
-  Future<void> _onRecordPressed() async {
-    if (SessionContext.testMode == TestMode.hardware) {
-      await _recordFromHardware();
-    } else {
-      await _recordFromMobile();
-    }
+  @override
+  void dispose() {
+    _instructionPlayer.dispose();
+    _recorder?.closeRecorder();
+    super.dispose();
   }
 
   // ================= 📱 MOBILE =================
@@ -68,11 +58,9 @@ class _AbstractionQuestionOneScreenState
         _isRecording = false;
         _recordedPath = path;
       });
-      debugPrint("✅ Mobile record stopped: $path");
+      debugPrint('✅ ABSTRACTION Q1 MOBILE STOP: $path');
     } else {
       final dir = await getTemporaryDirectory();
-      await _instructionPlayer.stop();
-
       await _recorder!.startRecorder(
         toFile: '${dir.path}/abstraction1_mobile.wav',
         codec: Codec.pcm16WAV,
@@ -84,164 +72,117 @@ class _AbstractionQuestionOneScreenState
         _isRecording = true;
         _recordedPath = null;
       });
-      debugPrint("🎙️ Mobile recording started...");
+
+      debugPrint('🎙️ ABSTRACTION Q1 MOBILE START');
     }
   }
 
   // ================= 🖥️ HARDWARE =================
-  Future<void> _recordFromHardware() async {
-    setState(() => _isLoading = true);
-    await _instructionPlayer.stop();
+  Future<void> _toggleHardwareRecording() async {
+    if (_hwRecording) {
+      setState(() => _isLoading = true);
 
-    try {
-      final uri = Uri.parse('${SessionContext.raspberryBaseUrl}/get-audio');
-      debugPrint("[HARDWARE] Requesting audio from $uri");
-
-      final res = await HttpClient()
-          .getUrl(uri)
-          .then((req) => req.close());
-
-      if (res.statusCode != 200) {
-        throw Exception("Hardware error ${res.statusCode}");
-      }
+      final res = await http.post(
+        Uri.parse('${SessionContext.raspberryBaseUrl}/stop-recording'),
+      );
 
       final dir = await getTemporaryDirectory();
       final file = File('${dir.path}/abstraction1_hw.wav');
-      final bytes = await consolidateHttpClientResponseBytes(res);
-      await file.writeAsBytes(bytes);
+      await file.writeAsBytes(res.bodyBytes);
 
       setState(() {
         _recordedPath = file.path;
+        _hwRecording = false;
+        _isLoading = false;
       });
 
-      debugPrint("✅ Hardware audio received: ${file.path}");
-    } catch (e) {
-      debugPrint("❌ Hardware record failed: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('خطأ في التسجيل من الجهاز الخارجي'),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+      debugPrint('✅ ABSTRACTION Q1 HW STOP: ${file.path}');
+    } else {
+      await http.post(
+        Uri.parse('${SessionContext.raspberryBaseUrl}/start-recording'),
+      );
+
+      setState(() => _hwRecording = true);
+      debugPrint('🎙️ ABSTRACTION Q1 HW START');
     }
   }
 
   // ================= 🚀 SUBMIT =================
-  Future<void> _submitAndNext() async {
+  Future<void> _submit() async {
     if (_recordedPath == null) return;
 
     setState(() => _isLoading = true);
-    try {
-      final result = await _apiService.checkAbstraction(_recordedPath!, 1);
 
-      TestSession.abstractionScore =
-          (result['score'] as int? ?? 0);
+    final result =
+        await _apiService.checkAbstraction(_recordedPath!, 1);
 
-      debugPrint("=================================");
-      debugPrint("🧠 ABSTRACTION Q1 RESULT");
-      debugPrint("Score: ${result['score']}");
-      debugPrint("Analysis: ${result['analysis']}");
-      debugPrint("=================================");
+    final score = (result['score'] as int?) ?? 0;
+    TestSession.abstractionScore = score;
 
-      if (!mounted) return;
+    // ✅ طباعة النتيجة
+    debugPrint('==============================');
+    debugPrint('🧠 ABSTRACTION Q1 RESULT');
+    debugPrint('FULL RESPONSE: $result');
+    debugPrint('SCORE Q1: $score');
+    debugPrint('==============================');
 
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => const AbstractionQuestionTwoScreen(),
-        ),
-      );
-    } catch (e) {
-      debugPrint("Submit error: $e");
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
+    setState(() => _isLoading = false);
 
-  @override
-  void dispose() {
-    _instructionPlayer.dispose();
-    _recorder?.closeRecorder();
-    super.dispose();
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const AbstractionQuestionTwoScreen(),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final bool isHardware = SessionContext.testMode == TestMode.hardware;
+    final isHw = SessionContext.testMode == TestMode.hardware;
 
     return Stack(
       children: [
         TestQuestionScaffold(
           title: 'التجريد (1/2)',
-          instruction: isHardware
+          instruction: isHw
               ? 'انطق الإجابة في ميكروفون الجهاز الخارجي'
               : 'ما وجه الشبه بين القطار والدراجة؟',
           content: Column(
             children: [
-              const Icon(
-                Icons.directions_transit,
-                size: 80,
-                color: Colors.blue,
-              ),
-              const SizedBox(height: 30),
-
               ElevatedButton.icon(
-                onPressed: _isLoading ? null : _onRecordPressed,
+                onPressed: _isLoading
+                    ? null
+                    : isHw
+                        ? _toggleHardwareRecording
+                        : _recordFromMobile,
                 icon: Icon(
-                  isHardware
+                  isHw
                       ? Icons.settings_remote
                       : (_isRecording ? Icons.stop : Icons.mic),
                 ),
                 label: Text(
-                  isHardware
-                      ? 'التقاط الصوت من الجهاز'
+                  isHw
+                      ? (_hwRecording ? 'إيقاف التسجيل' : 'بدء التسجيل')
                       : (_isRecording ? 'إيقاف التسجيل' : 'سجل إجابتك'),
                 ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _isRecording ? Colors.red : null,
-                  foregroundColor: _isRecording ? Colors.white : null,
-                ),
               ),
-
-              const SizedBox(height: 16),
-
               if (_recordedPath != null && !_isRecording)
-                const Text(
-                  '✅ تم تسجيل الإجابة',
-                  style: TextStyle(
-                    color: Colors.green,
-                    fontWeight: FontWeight.bold,
+                const Padding(
+                  padding: EdgeInsets.only(top: 16),
+                  child: Text(
+                    '✅ تم تسجيل الإجابة',
+                    style: TextStyle(color: Colors.green),
                   ),
                 ),
             ],
           ),
-          isNextEnabled:
-              _recordedPath != null && !_isRecording && !_isLoading,
-          onNext: _submitAndNext,
+          isNextEnabled: _recordedPath != null && !_isLoading,
+          onNext: _submit,
           onEndSession: () =>
               Navigator.popUntil(context, (r) => r.isFirst),
         ),
-
         if (_isLoading)
-          Container(
-            color: Colors.black26,
-            child: const Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 12),
-                  Text(
-                    'جاري معالجة الصوت...',
-                    style: TextStyle(color: Colors.white),
-                  ),
-                ],
-              ),
-            ),
-          ),
+          const Center(child: CircularProgressIndicator()),
       ],
     );
   }

@@ -7,7 +7,7 @@ class SessionContext {
   static TestMode? testMode;
 
   // ✅ IP الرازبيري + البورت
-  static String raspberryBaseUrl = 'http://10.82.150.111:5000';
+  static String raspberryBaseUrl = 'http://10.74.124.111:5000';
 
   static void clear() {
     sessionId = null;

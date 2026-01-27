@@ -29,6 +29,7 @@ class _DelayedRecallScreenState extends State<DelayedRecallScreen> {
   bool _isRecording = false;
   bool _hasRecorded = false;
   bool _isLoading = false;
+  bool _hwRecording = false;
 
   String? _audioPath;
 
@@ -61,15 +62,15 @@ class _DelayedRecallScreenState extends State<DelayedRecallScreen> {
         if (mounted) setState(() => _isPlaying = false);
       });
     } catch (e) {
-      debugPrint("Instruction audio error: $e");
+      debugPrint('❌ Instruction audio error: $e');
       setState(() => _isPlaying = false);
     }
   }
 
-  // 🎤 زر التسجيل الموحد
+  // 🎤 زر التسجيل
   Future<void> _onRecordPressed() async {
     if (SessionContext.testMode == TestMode.hardware) {
-      await _recordFromHardware();
+      await _toggleHardwareRecording();
     } else {
       await _recordFromMobile();
     }
@@ -84,7 +85,7 @@ class _DelayedRecallScreenState extends State<DelayedRecallScreen> {
         _hasRecorded = true;
         _audioPath = path;
       });
-      debugPrint("✅ Memory mobile recording stopped");
+      debugPrint('✅ MEMORY MOBILE STOP: $path');
     } else {
       await _instructionPlayer.stop();
       final dir = await getTemporaryDirectory();
@@ -101,28 +102,19 @@ class _DelayedRecallScreenState extends State<DelayedRecallScreen> {
         _hasRecorded = false;
         _audioPath = null;
       });
-      debugPrint("🎙️ Memory mobile recording started");
+
+      debugPrint('🎙️ MEMORY MOBILE START');
     }
   }
 
   // ================= 🖥️ HARDWARE =================
-  Future<void> _recordFromHardware() async {
-    setState(() => _isLoading = true);
-    await _instructionPlayer.stop();
+  Future<void> _toggleHardwareRecording() async {
+    if (_hwRecording) {
+      setState(() => _isLoading = true);
 
-    try {
-      final uri =
-          Uri.parse('${SessionContext.raspberryBaseUrl}/get-audio');
-
-      debugPrint("[HARDWARE] Requesting delayed recall audio from $uri");
-
-      final res = await http.get(uri).timeout(
-            const Duration(seconds: 20),
-          );
-
-      if (res.statusCode != 200) {
-        throw Exception("Hardware error ${res.statusCode}");
-      }
+      final res = await http.post(
+        Uri.parse('${SessionContext.raspberryBaseUrl}/stop-recording'),
+      );
 
       final dir = await getTemporaryDirectory();
       final file = File('${dir.path}/memory_hw.wav');
@@ -131,39 +123,46 @@ class _DelayedRecallScreenState extends State<DelayedRecallScreen> {
       setState(() {
         _audioPath = file.path;
         _hasRecorded = true;
+        _hwRecording = false;
+        _isLoading = false;
       });
 
-      debugPrint("✅ Memory hardware audio received");
-    } catch (e) {
-      debugPrint("❌ Hardware error: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('خطأ في التسجيل من الجهاز الخارجي'),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+      debugPrint('✅ MEMORY HW STOP: ${file.path}');
+    } else {
+      await _instructionPlayer.stop();
+
+      await http.post(
+        Uri.parse('${SessionContext.raspberryBaseUrl}/start-recording'),
+      );
+
+      setState(() {
+        _hwRecording = true;
+        _hasRecorded = false;
+      });
+
+      debugPrint('🎙️ MEMORY HW START');
     }
   }
 
-  // 🚀 الإرسال للتحليل
+  // ================= 🚀 SUBMIT =================
   Future<void> _submitAndNext() async {
     if (_audioPath == null) return;
 
     setState(() => _isLoading = true);
+
     try {
       final res = await _apiService.checkMemory(_audioPath!);
 
-      TestSession.memoryScore = res['score'] ?? 0;
+      final int score = res['score'] ?? 0;
+      TestSession.memoryScore = score;
 
-      debugPrint("=================================");
-      debugPrint("🧠 DELAYED RECALL RESULT");
-      debugPrint("Score: ${res['score']}");
-      debugPrint("Patient Said: ${res['patient_said']}");
-      debugPrint("Analysis: ${res['analysis']}");
-      debugPrint("=================================");
+      // 🧠 LOG واضح
+      debugPrint('================ MEMORY RESULT ================');
+      debugPrint('🧠 MEMORY SCORE: $score');
+      debugPrint('FULL RESPONSE: $res');
+      debugPrint('Patient Said: ${res['patient_said']}');
+      debugPrint('Analysis: ${res['analysis']}');
+      debugPrint('==============================================');
 
       if (!mounted) return;
 
@@ -174,7 +173,7 @@ class _DelayedRecallScreenState extends State<DelayedRecallScreen> {
         ),
       );
     } catch (e) {
-      debugPrint("❌ Memory submit error: $e");
+      debugPrint('❌ MEMORY SUBMIT ERROR: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('خطأ في التحليل: $e')),
@@ -223,16 +222,14 @@ class _DelayedRecallScreenState extends State<DelayedRecallScreen> {
                 ),
                 label: Text(
                   isHardware
-                      ? 'التقاط الصوت من الجهاز'
-                      : (_isRecording
-                          ? 'إيقاف التسجيل'
-                          : 'بدء تسجيل الإجابة'),
+                      ? (_hwRecording ? 'إيقاف التسجيل' : 'بدء التسجيل')
+                      : (_isRecording ? 'إيقاف التسجيل' : 'بدء تسجيل الإجابة'),
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor:
-                      _isRecording ? Colors.red : null,
+                      _isRecording || _hwRecording ? Colors.red : null,
                   foregroundColor:
-                      _isRecording ? Colors.white : null,
+                      _isRecording || _hwRecording ? Colors.white : null,
                 ),
               ),
 

@@ -50,23 +50,17 @@ class _SentenceRepetitionTwoScreenState
     super.dispose();
   }
 
-  // 🔊 تشغيل الجملة الثانية
+  // 🔊 الجملة الثانية
   Future<void> _playInstruction() async {
-    try {
-      setState(() => _isPlaying = true);
-      await _instructionPlayer.play(
-        AssetSource('audio/sentance2.mp3'),
-      );
-      _instructionPlayer.onPlayerComplete.listen((_) {
-        if (mounted) setState(() => _isPlaying = false);
-      });
-    } catch (e) {
-      debugPrint("Audio error: $e");
-      setState(() => _isPlaying = false);
-    }
+    setState(() => _isPlaying = true);
+    await _instructionPlayer.play(
+      AssetSource('audio/sentance2.mp3'),
+    );
+    _instructionPlayer.onPlayerComplete.listen((_) {
+      if (mounted) setState(() => _isPlaying = false);
+    });
   }
 
-  // 🎤 زر التسجيل الموحد
   Future<void> _onRecordPressed() async {
     if (SessionContext.testMode == TestMode.hardware) {
       await _recordFromHardware();
@@ -75,7 +69,7 @@ class _SentenceRepetitionTwoScreenState
     }
   }
 
-  // ================= 📱 MOBILE =================
+  // 📱 MOBILE
   Future<void> _recordFromMobile() async {
     if (_isRecording) {
       final path = await _recorder!.stopRecorder();
@@ -84,7 +78,7 @@ class _SentenceRepetitionTwoScreenState
         _hasRecorded = true;
         _audioPath = path;
       });
-      debugPrint("✅ Sentence 2 mobile recorded: $path");
+      debugPrint("🎙️ SENTENCE 2 MOBILE STOP: $path");
     } else {
       final dir = await getTemporaryDirectory();
       await _instructionPlayer.stop();
@@ -101,53 +95,51 @@ class _SentenceRepetitionTwoScreenState
         _hasRecorded = false;
         _audioPath = null;
       });
-      debugPrint("🎙️ Sentence 2 mobile recording started");
+      debugPrint("🎙️ SENTENCE 2 MOBILE START");
     }
   }
 
-  // ================= 🖥️ HARDWARE =================
+  // 🖥️ HARDWARE
   Future<void> _recordFromHardware() async {
-    setState(() => _isLoading = true);
-    await _instructionPlayer.stop();
+    final baseUrl = SessionContext.raspberryBaseUrl;
 
-    try {
-      final uri =
-          Uri.parse('${SessionContext.raspberryBaseUrl}/get-audio');
-      debugPrint("[HARDWARE] Requesting sentence 2 audio from $uri");
+    if (_isRecording) {
+      setState(() => _isLoading = true);
+      try {
+        await http.post(Uri.parse('$baseUrl/stop-recording'));
+        final res = await http.get(Uri.parse('$baseUrl/get-audio'));
 
-      final res = await http.get(uri).timeout(
-            const Duration(seconds: 20),
-          );
+        final dir = await getTemporaryDirectory();
+        final file = File('${dir.path}/sentence2_hw.wav');
+        await file.writeAsBytes(res.bodyBytes);
 
-      if (res.statusCode != 200) {
-        throw Exception("Hardware error ${res.statusCode}");
+        setState(() {
+          _audioPath = file.path;
+          _isRecording = false;
+          _hasRecorded = true;
+        });
+
+        debugPrint("🎙️ SENTENCE 2 HW SAVED");
+      } catch (e) {
+        debugPrint("❌ SENTENCE 2 HW ERROR: $e");
+      } finally {
+        if (mounted) setState(() => _isLoading = false);
       }
-
-      final dir = await getTemporaryDirectory();
-      final file = File('${dir.path}/sentence2_hw.wav');
-      await file.writeAsBytes(res.bodyBytes);
+    } else {
+      await _instructionPlayer.stop();
+      await http.post(Uri.parse('$baseUrl/start-recording'));
 
       setState(() {
-        _audioPath = file.path;
-        _hasRecorded = true;
+        _isRecording = true;
+        _hasRecorded = false;
+        _audioPath = null;
       });
 
-      debugPrint("✅ Sentence 2 audio received from hardware");
-    } catch (e) {
-      debugPrint("❌ Hardware error: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('خطأ في التسجيل من الجهاز الخارجي'),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+      debugPrint("🎙️ SENTENCE 2 HW START");
     }
   }
 
-  // ================= 🚀 SUBMIT =================
+  // 🚀 SUBMIT
   Future<void> _submit() async {
     if (_audioPath == null) return;
 
@@ -155,12 +147,15 @@ class _SentenceRepetitionTwoScreenState
     try {
       final res = await _apiService.checkSentence2(_audioPath!);
 
-      TestSession.sentence2Score = res['score'] ?? 0;
+      final score = res['score'] ?? 0;
+      final text = res['text'] ?? res['transcript'] ?? '—';
 
-      debugPrint("=================================");
-      debugPrint("🧠 SENTENCE 2 RESULT");
-      debugPrint("Score: ${res['score']}");
-      debugPrint("Analysis: ${res['analysis']}");
+      TestSession.sentence2Score = score;
+
+      debugPrint("=========== SENTENCE 2 ===========");
+      debugPrint("🗣️ Text: $text");
+      debugPrint("⭐ Score: $score");
+      debugPrint("📦 Full response: $res");
       debugPrint("=================================");
 
       if (!mounted) return;
@@ -172,7 +167,7 @@ class _SentenceRepetitionTwoScreenState
         ),
       );
     } catch (e) {
-      debugPrint("Submit error: $e");
+      debugPrint("❌ SENTENCE 2 SUBMIT ERROR: $e");
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -180,15 +175,10 @@ class _SentenceRepetitionTwoScreenState
 
   @override
   Widget build(BuildContext context) {
-    final bool isHardware = SessionContext.testMode == TestMode.hardware;
-
     return Stack(
       children: [
         TestQuestionScaffold(
           title: 'تكرار الجملة (2/2)',
-          instruction: isHardware
-              ? 'استمع للجملة ثم أعدها بوضوح في ميكروفون الجهاز.'
-              : 'استمع للجملة ثم أعدها كما سمعتها.',
           content: Column(
             children: [
               ElevatedButton.icon(
@@ -199,24 +189,14 @@ class _SentenceRepetitionTwoScreenState
               const SizedBox(height: 30),
 
               ElevatedButton.icon(
-                onPressed:
-                    (_isPlaying || _isLoading) ? null : _onRecordPressed,
+                onPressed: (_isPlaying || _isLoading)
+                    ? null
+                    : _onRecordPressed,
                 icon: Icon(
-                  isHardware
-                      ? Icons.settings_remote
-                      : (_isRecording ? Icons.stop : Icons.mic),
+                  _isRecording ? Icons.stop : Icons.mic,
                 ),
                 label: Text(
-                  isHardware
-                      ? 'التقاط الصوت من الجهاز'
-                      : (_isRecording
-                          ? 'إيقاف التسجيل'
-                          : 'تسجيل الإجابة'),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor:
-                      _isRecording ? Colors.red : Colors.blue,
-                  foregroundColor: Colors.white,
+                  _isRecording ? 'إيقاف التسجيل' : 'بدء التسجيل',
                 ),
               ),
 
@@ -250,4 +230,3 @@ class _SentenceRepetitionTwoScreenState
     );
   }
 }
-

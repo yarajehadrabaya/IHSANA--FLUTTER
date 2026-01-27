@@ -4,6 +4,8 @@ import 'package:ihsana/test/widgets/test_question_scaffold.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter_sound/flutter_sound.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart';
 
 import '../../session/session_context.dart';
 import '../test_mode_selection_screen.dart';
@@ -32,27 +34,20 @@ class _DigitSpanForwardScreenState extends State<DigitSpanForwardScreen> {
   @override
   void initState() {
     super.initState();
-
-    // 📱 فتح المايك فقط في وضع الجوال
     if (SessionContext.testMode == TestMode.mobile) {
       _recorder = FlutterSoundRecorder()..openRecorder();
     }
-
     _playInstruction();
   }
 
-  // 🔊 تشغيل الأرقام
   Future<void> _playInstruction() async {
     setState(() => _isPlaying = true);
-    await _instructionPlayer.play(
-      AssetSource('audio/forword.mp3'),
-    );
+    await _instructionPlayer.play(AssetSource('audio/forword.mp3'));
     _instructionPlayer.onPlayerComplete.listen((_) {
       if (mounted) setState(() => _isPlaying = false);
     });
   }
 
-  // 🎤 زر التسجيل الموحد
   Future<void> _onRecordPressed() async {
     if (SessionContext.testMode == TestMode.hardware) {
       await _recordFromHardware();
@@ -61,7 +56,7 @@ class _DigitSpanForwardScreenState extends State<DigitSpanForwardScreen> {
     }
   }
 
-  // ================= 📱 MOBILE =================
+  // 📱 MOBILE
   Future<void> _recordFromMobile() async {
     if (_isRecording) {
       final path = await _recorder!.stopRecorder();
@@ -69,7 +64,7 @@ class _DigitSpanForwardScreenState extends State<DigitSpanForwardScreen> {
         _isRecording = false;
         _recordedPath = path;
       });
-      debugPrint("✅ Forward mobile record stopped: $path");
+      debugPrint("🎤 MOBILE FORWARD STOP: $path");
     } else {
       final dir = await getTemporaryDirectory();
       await _recorder!.startRecorder(
@@ -82,51 +77,44 @@ class _DigitSpanForwardScreenState extends State<DigitSpanForwardScreen> {
         _isRecording = true;
         _recordedPath = null;
       });
-      debugPrint("🎙️ Forward mobile recording started...");
+      debugPrint("🎤 MOBILE FORWARD START");
     }
   }
 
-  // ================= 🖥️ HARDWARE =================
+  // 🖥️ HARDWARE
   Future<void> _recordFromHardware() async {
-    setState(() => _isLoading = true);
+    final baseUrl = SessionContext.raspberryBaseUrl;
 
-    try {
-      final uri = Uri.parse('${SessionContext.raspberryBaseUrl}/get-audio');
-      debugPrint("[HARDWARE] Requesting forward audio from $uri");
+    if (_isRecording) {
+      setState(() => _isLoading = true);
+      try {
+        await http.post(Uri.parse('$baseUrl/stop-recording'));
+        final res = await http.get(Uri.parse('$baseUrl/get-audio'));
 
-      final res = await HttpClient()
-          .getUrl(uri)
-          .then((req) => req.close());
+        final dir = await getTemporaryDirectory();
+        final file = File('${dir.path}/digits_forward_hw.wav');
+        await file.writeAsBytes(res.bodyBytes);
 
-      if (res.statusCode != 200) {
-        throw Exception("Hardware error ${res.statusCode}");
+        setState(() {
+          _recordedPath = file.path;
+          _isRecording = false;
+        });
+
+        debugPrint("🎤 HW FORWARD SAVED: ${file.path}");
+      } finally {
+        if (mounted) setState(() => _isLoading = false);
       }
-
-      final dir = await getTemporaryDirectory();
-      final file = File('${dir.path}/digits_forward_hw.wav');
-      final bytes = await consolidateHttpClientResponseBytes(res);
-      await file.writeAsBytes(bytes);
-
+    } else {
+      await http.post(Uri.parse('$baseUrl/start-recording'));
       setState(() {
-        _recordedPath = file.path;
+        _isRecording = true;
+        _recordedPath = null;
       });
-
-      debugPrint("✅ Hardware forward audio received");
-    } catch (e) {
-      debugPrint("❌ Forward hardware error: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('خطأ في التسجيل من الجهاز الخارجي'),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+      debugPrint("🎤 HW FORWARD START");
     }
   }
 
-  // ================= 🚀 SUBMIT =================
+  // 🚀 SUBMIT
   Future<void> _submit() async {
     if (_recordedPath == null) return;
 
@@ -137,24 +125,25 @@ class _DigitSpanForwardScreenState extends State<DigitSpanForwardScreen> {
         "digits-forward",
       );
 
-      TestSession.forwardScore = result['score'] ?? 0;
+      final score = result['score'] ?? 0;
+      final spokenText =
+          result['text'] ?? result['transcript'] ?? '—';
 
-      debugPrint("=================================");
-      debugPrint("🧠 DIGIT SPAN FORWARD RESULT");
-      debugPrint("Score: ${result['score']}");
-      debugPrint("Analysis: ${result['analysis']}");
-      debugPrint("=================================");
+      TestSession.forwardScore = score;
+
+      debugPrint("========== DIGITS FORWARD ==========");
+      debugPrint("🗣️ User said: $spokenText");
+      debugPrint("⭐ Score: $score");
+      debugPrint("📦 Full result: $result");
+      debugPrint("===================================");
 
       if (!mounted) return;
-
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => const DigitSpanBackwardScreen(),
         ),
       );
-    } catch (e) {
-      debugPrint("Submit error: $e");
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -169,69 +158,37 @@ class _DigitSpanForwardScreenState extends State<DigitSpanForwardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final bool isHardware = SessionContext.testMode == TestMode.hardware;
+    final isHardware = SessionContext.testMode == TestMode.hardware;
 
-    return Stack(
-      children: [
-        TestQuestionScaffold(
-          title: 'الأرقام للأمام',
-          content: Column(
-            children: [
-              ElevatedButton.icon(
-                onPressed: _isPlaying ? null : _playInstruction,
-                icon: const Icon(Icons.volume_up),
-                label: const Text("سماع الأرقام"),
-              ),
-
-              const SizedBox(height: 20),
-
-              ElevatedButton.icon(
-                onPressed: (_isLoading || _isPlaying)
-                    ? null
-                    : _onRecordPressed,
-                icon: Icon(
-                  isHardware
-                      ? Icons.settings_remote
-                      : (_isRecording ? Icons.stop : Icons.mic),
-                ),
-                label: Text(
-                  isHardware
-                      ? 'التقاط الصوت من الجهاز'
-                      : (_isRecording ? 'إيقاف التسجيل' : 'تسجيل إجابتك'),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _isRecording ? Colors.red : Colors.blue,
-                  foregroundColor: Colors.white,
-                ),
-              ),
-
-              const SizedBox(height: 16),
-
-              if (_recordedPath != null && !_isRecording)
-                const Text(
-                  '✅ تم تسجيل الإجابة',
-                  style: TextStyle(
-                    color: Colors.green,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-            ],
+    return TestQuestionScaffold(
+      title: 'الأرقام للأمام',
+      content: Column(
+        children: [
+          ElevatedButton.icon(
+            onPressed: _isPlaying ? null : _playInstruction,
+            icon: const Icon(Icons.volume_up),
+            label: const Text("سماع الأرقام"),
           ),
-          isNextEnabled:
-              _recordedPath != null && !_isRecording && !_isLoading,
-          onNext: _submit,
-          onEndSession: () =>
-              Navigator.popUntil(context, (r) => r.isFirst),
-        ),
-
-        if (_isLoading)
-          Container(
-            color: Colors.black26,
-            child: const Center(
-              child: CircularProgressIndicator(),
+          const SizedBox(height: 20),
+          ElevatedButton.icon(
+            onPressed:
+                (_isLoading || _isPlaying) ? null : _onRecordPressed,
+            icon: Icon(
+              isHardware
+                  ? (_isRecording ? Icons.stop : Icons.settings_remote)
+                  : (_isRecording ? Icons.stop : Icons.mic),
+            ),
+            label: Text(
+              _isRecording ? 'إيقاف التسجيل' : 'تسجيل الإجابة',
             ),
           ),
-      ],
+        ],
+      ),
+      isNextEnabled:
+          _recordedPath != null && !_isRecording && !_isLoading,
+      onNext: _submit,
+      onEndSession: () =>
+          Navigator.popUntil(context, (r) => r.isFirst),
     );
   }
 }

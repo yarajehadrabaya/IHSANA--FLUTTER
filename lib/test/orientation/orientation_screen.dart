@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -28,6 +29,8 @@ class _OrientationScreenState extends State<OrientationScreen> {
   FlutterSoundRecorder? _recorder;
   final MocaApiService _apiService = MocaApiService();
 
+  Timer? _forceStopTimer;
+
   String expectedPlace = "...";
   String expectedCity = "...";
 
@@ -44,6 +47,7 @@ class _OrientationScreenState extends State<OrientationScreen> {
 
   bool _isRecording = false;
   bool _isLoading = false;
+  bool _isHardwareRecording = false;
 
   @override
   void initState() {
@@ -61,52 +65,43 @@ class _OrientationScreenState extends State<OrientationScreen> {
   void dispose() {
     _instructionPlayer.dispose();
     _recorder?.closeRecorder();
+    _forceStopTimer?.cancel();
     super.dispose();
   }
 
-  // ================= 🔊 VOICE =================
+  // ================= 🔊 AUDIO =================
   Future<void> _playStep(int index) async {
     if (index < _order.length) {
-      try {
-        await _instructionPlayer.play(
-          AssetSource('audio/${_order[index]}.mp3'),
-        );
-      } catch (e) {
-        debugPrint("Orientation audio error: $e");
-      }
+      await _instructionPlayer.play(
+        AssetSource('audio/${_order[index]}.mp3'),
+      );
     }
   }
 
   // ================= 🔥 FIREBASE =================
   Future<void> _fetchFirebaseData() async {
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      final sessionId = SessionContext.sessionId;
+    final user = FirebaseAuth.instance.currentUser;
+    final sessionId = SessionContext.sessionId;
 
-      if (user != null && sessionId != null) {
-        final doc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .collection('sessions')
-            .doc(sessionId)
-            .get();
+    if (user != null && sessionId != null) {
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('sessions')
+          .doc(sessionId)
+          .get();
 
-        if (doc.exists) {
-          setState(() {
-            expectedCity = doc.data()?['city_before'] ?? "نابلس";
-            expectedPlace = doc.data()?['place_before'] ?? "البيت";
-          });
-        }
+      if (doc.exists) {
+        expectedCity = doc.data()?['city_before'] ?? "نابلس";
+        expectedPlace = doc.data()?['place_before'] ?? "البيت";
       }
-    } catch (e) {
-      debugPrint("Firebase error: $e");
     }
   }
 
   // ================= 🎤 RECORD =================
   Future<void> _onRecordPressed(String key) async {
     if (SessionContext.testMode == TestMode.hardware) {
-      await _recordFromHardware(key);
+      await _toggleHardware(key);
     } else {
       await _recordFromMobile(key);
     }
@@ -122,60 +117,59 @@ class _OrientationScreenState extends State<OrientationScreen> {
       });
       _moveNext();
     } else {
-      await _instructionPlayer.stop();
       final dir = await getTemporaryDirectory();
-
       await _recorder!.startRecorder(
         toFile: '${dir.path}/ori_$key.wav',
         codec: Codec.pcm16WAV,
         sampleRate: 16000,
         numChannels: 1,
       );
-
       setState(() => _isRecording = true);
     }
   }
 
   // -------- 🖥️ HARDWARE --------
-  Future<void> _recordFromHardware(String key) async {
-    setState(() => _isLoading = true);
-    await _instructionPlayer.stop();
-
-    try {
-      final uri =
-          Uri.parse('${SessionContext.raspberryBaseUrl}/get-audio');
-
-      debugPrint("[HARDWARE] Orientation request → $uri");
-
-      final res = await http.get(uri).timeout(
-            const Duration(seconds: 20),
-          );
-
-      if (res.statusCode != 200) {
-        throw Exception("Hardware error ${res.statusCode}");
-      }
-
-      final dir = await getTemporaryDirectory();
-      final file = File('${dir.path}/ori_${key}_hw.wav');
-      await file.writeAsBytes(res.bodyBytes);
-
-      setState(() {
-        _recordedPaths[key] = file.path;
-      });
-
-      _moveNext();
-    } catch (e) {
-      debugPrint("❌ Orientation hardware error: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('خطأ في التسجيل من الجهاز الخارجي'),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+  Future<void> _toggleHardware(String key) async {
+    if (_isHardwareRecording) {
+      await _stopHardware(key);
+    } else {
+      await _startHardware();
     }
+  }
+
+  Future<void> _startHardware() async {
+    setState(() => _isHardwareRecording = true);
+
+    await http.post(
+      Uri.parse('${SessionContext.raspberryBaseUrl}/start-recording'),
+    );
+
+    _forceStopTimer?.cancel();
+    _forceStopTimer = Timer(const Duration(seconds: 60), () {
+      if (_isHardwareRecording) {
+        _stopHardware(_order[_currentIndex]);
+      }
+    });
+  }
+
+  Future<void> _stopHardware(String key) async {
+    setState(() => _isLoading = true);
+
+    final res = await http.post(
+      Uri.parse('${SessionContext.raspberryBaseUrl}/stop-recording'),
+    );
+
+    final dir = await getTemporaryDirectory();
+    final file = File('${dir.path}/ori_${key}_hw.wav');
+    await file.writeAsBytes(res.bodyBytes);
+
+    setState(() {
+      _recordedPaths[key] = file.path;
+      _isHardwareRecording = false;
+      _isLoading = false;
+    });
+
+    _moveNext();
   }
 
   // ================= ➡️ NEXT =================
@@ -188,117 +182,76 @@ class _OrientationScreenState extends State<OrientationScreen> {
 
   // ================= 🚀 FINISH =================
   Future<void> _finish() async {
-    setState(() => _isLoading = true);
+    final res = await _apiService.checkOrientation(
+      place: expectedPlace,
+      city: expectedCity,
+      audioPaths: _order.map((k) => _recordedPaths[k]!).toList(),
+    );
 
-    try {
-      final res = await _apiService.checkOrientation(
-        place: expectedPlace,
-        city: expectedCity,
-        audioPaths: [
-          _recordedPaths['day']!,
-          _recordedPaths['month']!,
-          _recordedPaths['year']!,
-          _recordedPaths['place']!,
-          _recordedPaths['city']!,
-        ],
-      );
+    final int score = res['score'] ?? 0;
+    TestSession.orientationScore = score;
 
-      TestSession.orientationScore = res['score'] ?? 0;
+    // 🧠 LOG واضح
+    debugPrint('============== ORIENTATION RESULT ==============');
+    debugPrint('🧠 ORIENTATION SCORE: $score');
+    debugPrint('FULL RESPONSE: $res');
+    debugPrint('================================================');
 
-      final result = MocaResult(
-        visuospatial: TestSession.finalVisuospatial,
-        naming: TestSession.namingScore,
-        attention: TestSession.finalAttention,
-        language: TestSession.finalLanguage,
-        abstraction: TestSession.abstractionScore,
-        delayedRecall: TestSession.memoryScore,
-        orientation: TestSession.orientationScore,
-        educationBelow12Years: TestSession.educationBelow12Years,
-      );
+    final result = MocaResult(
+      visuospatial: TestSession.finalVisuospatial,
+      naming: TestSession.namingScore,
+      attention: TestSession.finalAttention,
+      language: TestSession.finalLanguage,
+      abstraction: TestSession.abstractionScore,
+      delayedRecall: TestSession.memoryScore,
+      orientation: TestSession.orientationScore,
+      educationBelow12Years: TestSession.educationBelow12Years,
+    );
 
-      if (!mounted) return;
-
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ResultsScreen(result: result),
-        ),
-      );
-    } catch (e) {
-      debugPrint("❌ Orientation submit error: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('خطأ في التحليل النهائي: $e')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ResultsScreen(result: result),
+      ),
+    );
   }
 
   // ================= 🧱 UI =================
   @override
   Widget build(BuildContext context) {
-    bool canFinish =
-        _recordedPaths.values.every((v) => v != null);
+    final canFinish = _recordedPaths.values.every((v) => v != null);
 
-    return Stack(
-      children: [
-        TestQuestionScaffold(
-          title: 'التوجّه',
-          content: Column(
-            children: _order.map((key) {
-              bool isDone = _recordedPaths[key] != null;
-              bool isCurrent = _order[_currentIndex] == key;
+    return TestQuestionScaffold(
+      title: 'التوجّه',
+      content: Column(
+        children: _order.map((key) {
+          final isCurrent = _order[_currentIndex] == key;
+          final isDone = _recordedPaths[key] != null;
 
-              return Card(
-                color: isCurrent
-                    ? Colors.blue.shade50
-                    : Colors.white,
-                child: ListTile(
-                  title: Text(
-                    _label(key),
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold),
-                  ),
-                  subtitle: Text(
-                    isDone
-                        ? 'تم الحفظ ✓'
-                        : (isCurrent
-                            ? 'سجل الآن...'
-                            : 'بانتظار دورك'),
-                  ),
-                  trailing: IconButton(
-                    icon: Icon(
-                      _isRecording && isCurrent
-                          ? Icons.stop
-                          : Icons.mic,
-                      color: isDone
-                          ? Colors.green
-                          : Colors.blue,
-                    ),
-                    onPressed: _isLoading
-                        ? null
-                        : () => _onRecordPressed(key),
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
-          isNextEnabled: canFinish && !_isLoading,
-          onNext: _finish,
-          onEndSession: () =>
-              Navigator.popUntil(context, (r) => r.isFirst),
-        ),
-
-        if (_isLoading)
-          Container(
-            color: Colors.black26,
-            child: const Center(
-              child: CircularProgressIndicator(),
+          return ListTile(
+            title: Text(_label(key)),
+            subtitle: Text(
+              isDone
+                  ? 'تم التسجيل ✓'
+                  : (isCurrent ? 'سجل الآن' : 'بانتظار دورك'),
             ),
-          ),
-      ],
+            trailing: IconButton(
+              icon: Icon(
+                _isHardwareRecording && isCurrent
+                    ? Icons.stop
+                    : Icons.mic,
+                color: isDone ? Colors.green : Colors.blue,
+              ),
+              onPressed:
+                  _isLoading ? null : () => _onRecordPressed(key),
+            ),
+          );
+        }).toList(),
+      ),
+      isNextEnabled: canFinish && !_isLoading,
+      onNext: _finish,
+      onEndSession: () =>
+          Navigator.popUntil(context, (r) => r.isFirst),
     );
   }
 

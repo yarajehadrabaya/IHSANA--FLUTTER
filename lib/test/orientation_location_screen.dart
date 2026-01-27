@@ -1,7 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:ihsana/test/abstraction/abstraction_question_one_screen.dart';
+import 'package:ihsana/test/attention/digit_span_backward_screen.dart';
+import 'package:ihsana/test/attention/digit_span_forward_screen.dart';
+import 'package:ihsana/test/attention/subtraction_screen.dart';
+import 'package:ihsana/test/language/sentence_repetition_screen_one.dart';
+import 'package:ihsana/test/language/sentence_repetition_screen_two.dart';
+import 'package:ihsana/test/language/verbal_fluency_screen.dart';
+import 'package:ihsana/test/memory/delayed_recall_screen.dart';
 import 'package:ihsana/test/naming/naming_lion_screen.dart';
+import 'package:ihsana/test/visuospatial/clock_drawing_screen.dart';
 import 'package:ihsana/test/visuospatial/trail_making_screen.dart';
 
 import '../theme/app_theme.dart';
@@ -50,7 +59,7 @@ class _OrientationLocationScreenState
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => const CubeCopyScreen(),
+          builder: (_) => const TrailMakingScreen(),
         ),
       );
     } catch (e) {

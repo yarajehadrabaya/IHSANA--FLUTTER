@@ -5,6 +5,7 @@ import 'package:flutter_sound/flutter_sound.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart';
 
 import '../../session/session_context.dart';
 import '../test_mode_selection_screen.dart';
@@ -26,7 +27,6 @@ class _SubtractionScreenState extends State<SubtractionScreen> {
 
   bool _isRecording = false;
   bool _isLoading = false;
-  int _count = 0;
   String? _recordedPath;
 
   @override
@@ -40,7 +40,7 @@ class _SubtractionScreenState extends State<SubtractionScreen> {
     _playInstruction();
   }
 
-  // 🔊 تشغيل التعليمات
+  // 🔊 تعليمات
   Future<void> _playInstruction() async {
     await _instructionPlayer.play(
       AssetSource('audio/subtraction.mp3'),
@@ -64,7 +64,7 @@ class _SubtractionScreenState extends State<SubtractionScreen> {
         _isRecording = false;
         _recordedPath = path;
       });
-      debugPrint("✅ Subtraction mobile stopped: $path");
+      debugPrint("🎙️ MOBILE SUBTRACTION STOP: $path");
     } else {
       final dir = await getTemporaryDirectory();
       await _instructionPlayer.stop();
@@ -79,49 +79,49 @@ class _SubtractionScreenState extends State<SubtractionScreen> {
       setState(() {
         _isRecording = true;
         _recordedPath = null;
-        _count = 0;
       });
 
-      debugPrint("🎙️ Subtraction mobile started");
+      debugPrint("🎙️ MOBILE SUBTRACTION START");
     }
   }
 
   // ================= 🖥️ HARDWARE =================
   Future<void> _recordFromHardware() async {
-    setState(() => _isLoading = true);
-    await _instructionPlayer.stop();
+    final baseUrl = SessionContext.raspberryBaseUrl;
 
-    try {
-      final uri = Uri.parse('${SessionContext.raspberryBaseUrl}/get-audio');
-      debugPrint("[HARDWARE] Requesting subtraction audio from $uri");
+    if (_isRecording) {
+      // ⛔ STOP
+      setState(() => _isLoading = true);
+      try {
+        await http.post(Uri.parse('$baseUrl/stop-recording'));
+        final res = await http.get(Uri.parse('$baseUrl/get-audio'));
 
-      final res = await http.get(uri).timeout(const Duration(seconds: 20));
+        final dir = await getTemporaryDirectory();
+        final file = File('${dir.path}/subtraction_hw.wav');
+        await file.writeAsBytes(res.bodyBytes);
 
-      if (res.statusCode != 200) {
-        throw Exception("Hardware error ${res.statusCode}");
+        setState(() {
+          _recordedPath = file.path;
+          _isRecording = false;
+        });
+
+        debugPrint("🎙️ HW SUBTRACTION SAVED: ${file.path}");
+      } catch (e) {
+        debugPrint("❌ HW STOP ERROR: $e");
+      } finally {
+        if (mounted) setState(() => _isLoading = false);
       }
-
-      final dir = await getTemporaryDirectory();
-      final file = File('${dir.path}/subtraction_hw.wav');
-      await file.writeAsBytes(res.bodyBytes);
+    } else {
+      // ▶ START
+      await _instructionPlayer.stop();
+      await http.post(Uri.parse('$baseUrl/start-recording'));
 
       setState(() {
-        _recordedPath = file.path;
-        _count = 5; // يعتبرها مكتملة
+        _isRecording = true;
+        _recordedPath = null;
       });
 
-      debugPrint("✅ Subtraction audio received from hardware");
-    } catch (e) {
-      debugPrint("❌ Subtraction hardware error: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('خطأ في التسجيل من الجهاز الخارجي'),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+      debugPrint("🎙️ HW SUBTRACTION START");
     }
   }
 
@@ -136,13 +136,17 @@ class _SubtractionScreenState extends State<SubtractionScreen> {
         "subtraction",
       );
 
-      TestSession.subtractionScore = result['score'] ?? 0;
+      final score = result['score'] ?? 0;
+      final spokenText =
+          result['text'] ?? result['transcript'] ?? '—';
 
-      debugPrint("=================================");
-      debugPrint("🧠 SUBTRACTION RESULT");
-      debugPrint("Score: ${result['score']}");
-      debugPrint("Analysis: ${result['analysis']}");
-      debugPrint("=================================");
+      TestSession.subtractionScore = score;
+
+      debugPrint("=========== SUBTRACTION ===========");
+      debugPrint("🗣️ User said: $spokenText");
+      debugPrint("⭐ Score: $score");
+      debugPrint("📦 Full result: $result");
+      debugPrint("==================================");
 
       if (!mounted) return;
 
@@ -153,7 +157,7 @@ class _SubtractionScreenState extends State<SubtractionScreen> {
         ),
       );
     } catch (e) {
-      debugPrint("Submit error: $e");
+      debugPrint("❌ SUBMIT ERROR: $e");
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -168,45 +172,29 @@ class _SubtractionScreenState extends State<SubtractionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final bool isHardware = SessionContext.testMode == TestMode.hardware;
+    final isHardware = SessionContext.testMode == TestMode.hardware;
 
     return Stack(
       children: [
         TestQuestionScaffold(
           title: 'الطرح من 100',
           instruction: isHardware
-              ? 'انطق الأرقام بوضوح في ميكروفون الجهاز'
+              ? 'اضغط بدء ثم انهِ التسجيل من الجهاز الخارجي'
               : 'اطرح 7 من 100 خمس مرات متتالية',
           content: Column(
             children: [
-              Text(
-                "المحاولات: $_count / 5",
-                style: const TextStyle(fontSize: 18),
-              ),
-              const SizedBox(height: 24),
-
               ElevatedButton.icon(
                 onPressed: _isLoading ? null : _onRecordPressed,
                 icon: Icon(
                   isHardware
-                      ? Icons.settings_remote
+                      ? (_isRecording ? Icons.stop : Icons.settings_remote)
                       : (_isRecording ? Icons.stop : Icons.mic),
                 ),
                 label: Text(
-                  isHardware
-                      ? 'التقاط الصوت من الجهاز'
-                      : (_isRecording ? 'إيقاف التسجيل' : 'بدء التسجيل'),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _isRecording ? Colors.red : Colors.blue,
-                  foregroundColor: Colors.white,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                  _isRecording ? 'إيقاف التسجيل' : 'بدء التسجيل',
                 ),
               ),
-
               const SizedBox(height: 20),
-
               if (_recordedPath != null && !_isRecording)
                 const Text(
                   '✅ تم تسجيل الإجابة',

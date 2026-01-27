@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:ihsana/test/widgets/test_question_scaffold.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter_sound/flutter_sound.dart';
 import 'package:path_provider/path_provider.dart';
@@ -13,6 +12,7 @@ import '../../utils/test_session.dart';
 import '../../session/session_context.dart';
 import '../test_mode_selection_screen.dart';
 import '../abstraction/abstraction_question_one_screen.dart';
+import '../../test/widgets/test_question_scaffold.dart';
 
 class VerbalFluencyScreen extends StatefulWidget {
   const VerbalFluencyScreen({super.key});
@@ -29,7 +29,7 @@ class _VerbalFluencyScreenState extends State<VerbalFluencyScreen> {
   FlutterSoundRecorder? _recorder;
   final MocaApiService _apiService = MocaApiService();
 
-  bool _isRunning = false;
+  bool _isRecording = false;
   bool _isFinished = false;
   bool _isLoading = false;
 
@@ -43,7 +43,7 @@ class _VerbalFluencyScreenState extends State<VerbalFluencyScreen> {
       _recorder = FlutterSoundRecorder()..openRecorder();
     }
 
-    _playInstruction();
+    _instructionPlayer.play(AssetSource('audio/fluency.mp3'));
   }
 
   @override
@@ -54,230 +54,138 @@ class _VerbalFluencyScreenState extends State<VerbalFluencyScreen> {
     super.dispose();
   }
 
-  // 🔊 تشغيل التعليمات
-  Future<void> _playInstruction() async {
-    try {
-      await _instructionPlayer.play(
-        AssetSource('audio/fluency.mp3'),
-      );
-    } catch (e) {
-      debugPrint("Audio error: $e");
-    }
-  }
-
-  // ▶️ بدء التسجيل
-  Future<void> _startRecording() async {
-    if (SessionContext.testMode == TestMode.hardware) {
-      await _recordFromHardware();
-    } else {
-      await _recordFromMobile();
-    }
-  }
-
-  // ================= 📱 MOBILE =================
-  Future<void> _recordFromMobile() async {
-    final dir = await getTemporaryDirectory();
-    _audioPath = '${dir.path}/fluency_mobile.wav';
-
-    await _recorder!.startRecorder(
-      toFile: _audioPath,
-      codec: Codec.pcm16WAV,
-      sampleRate: 16000,
-      numChannels: 1,
-    );
-
-    setState(() {
-      _isRunning = true;
-      _isFinished = false;
-      _seconds = 60;
-    });
-
-    _startTimer(onFinish: _stopMobileRecording);
-    debugPrint("🎙️ Fluency mobile recording started");
-  }
-
-  Future<void> _stopMobileRecording() async {
-    await _recorder!.stopRecorder();
-    setState(() {
-      _isRunning = false;
-      _isFinished = true;
-    });
-    debugPrint("✅ Fluency mobile recording finished");
-  }
-
-  // ================= 🖥️ HARDWARE =================
-  Future<void> _recordFromHardware() async {
-    setState(() {
-      _isRunning = true;
-      _isFinished = false;
-      _seconds = 60;
-      _isLoading = true;
-    });
-
-    _startTimer(); // مؤقت واجهة فقط
-
-    try {
-      final uri =
-          Uri.parse('${SessionContext.raspberryBaseUrl}/get-audio');
-      debugPrint("[HARDWARE] Requesting 60s fluency audio from $uri");
-
-      final res = await http.get(uri).timeout(
-            const Duration(seconds: 70),
-          );
-
-      if (res.statusCode != 200) {
-        throw Exception("Hardware error ${res.statusCode}");
-      }
-
-      final dir = await getTemporaryDirectory();
-      final file = File('${dir.path}/fluency_hw.wav');
-      await file.writeAsBytes(res.bodyBytes);
-
-      setState(() {
-        _audioPath = file.path;
-        _isRunning = false;
-        _isFinished = true;
-      });
-
-      debugPrint("✅ Fluency hardware audio received");
-    } catch (e) {
-      debugPrint("❌ Hardware error: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('خطأ في التسجيل من الجهاز الخارجي'),
-          ),
-        );
-      }
-      setState(() {
-        _isRunning = false;
-        _isFinished = false;
-      });
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  // ⏱️ المؤقت
-  void _startTimer({VoidCallback? onFinish}) {
+  // ================= TIMER =================
+  void _startTimer() {
     _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 1), (t) {
+    _seconds = 60;
+
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (_seconds == 0) {
-        t.cancel();
-        if (onFinish != null) onFinish();
+        timer.cancel();
+        _forceStopRecording();
       } else {
         setState(() => _seconds--);
       }
     });
   }
 
-  // 🚀 إرسال للتحليل
+  // ================= START =================
+  Future<void> _startRecording() async {
+    if (_isRecording) return;
+
+    setState(() {
+      _isRecording = true;
+      _isFinished = false;
+    });
+
+    debugPrint('🎙️ FLUENCY RECORDING STARTED');
+
+    if (SessionContext.testMode == TestMode.mobile) {
+      final dir = await getTemporaryDirectory();
+      _audioPath = '${dir.path}/fluency_mobile.wav';
+
+      await _recorder!.startRecorder(
+        toFile: _audioPath,
+        codec: Codec.pcm16WAV,
+        sampleRate: 16000,
+        numChannels: 1,
+      );
+    } else {
+      await http.post(
+        Uri.parse('${SessionContext.raspberryBaseUrl}/start-recording'),
+      );
+    }
+
+    _startTimer();
+  }
+
+  // ================= FORCE STOP =================
+  Future<void> _forceStopRecording() async {
+    if (!_isRecording) return;
+
+    debugPrint('⏹️ FLUENCY FORCE STOP AFTER 60s');
+
+    _isRecording = false;
+    setState(() => _isLoading = true);
+
+    if (SessionContext.testMode == TestMode.mobile) {
+      await _recorder!.stopRecorder();
+    } else {
+      // 1️⃣ stop recording
+      await http.post(
+        Uri.parse('${SessionContext.raspberryBaseUrl}/stop-recording'),
+      );
+
+      // 2️⃣ get audio file
+      final audioRes = await http.get(
+        Uri.parse('${SessionContext.raspberryBaseUrl}/get-audio'),
+      );
+
+      if (audioRes.statusCode != 200) {
+        throw Exception('Failed to fetch fluency audio');
+      }
+
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/fluency_hw.wav');
+      await file.writeAsBytes(audioRes.bodyBytes);
+
+      debugPrint('✅ FLUENCY AUDIO SAVED: ${file.path}');
+      _audioPath = file.path;
+    }
+
+    setState(() {
+      _isFinished = true;
+      _isLoading = false;
+    });
+  }
+
+  // ================= SUBMIT =================
   Future<void> _submit() async {
     if (_audioPath == null) return;
 
-    setState(() => _isLoading = true);
-    try {
-      final res = await _apiService.checkFluency(_audioPath!);
+    debugPrint('📤 Sending fluency audio to model: $_audioPath');
 
-      TestSession.fluencyScore = res['score'] ?? 0;
+    final res = await _apiService.checkFluency(_audioPath!);
+    TestSession.fluencyScore = res['score'] ?? 0;
 
-      debugPrint("=================================");
-      debugPrint("🧠 VERBAL FLUENCY RESULT");
-      debugPrint("Score: ${res['score']}");
-      debugPrint("Analysis: ${res['analysis']}");
-      debugPrint("=================================");
+    debugPrint('==============================');
+    debugPrint('🧠 FLUENCY RESULT');
+    debugPrint('Score: ${res['score']}');
+    debugPrint('Analysis: ${res['analysis']}');
+    debugPrint('==============================');
 
-      if (!mounted) return;
-
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => const AbstractionQuestionOneScreen(),
-        ),
-      );
-    } catch (e) {
-      debugPrint("Submit error: $e");
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const AbstractionQuestionOneScreen(),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final bool isHardware = SessionContext.testMode == TestMode.hardware;
-
-    return Stack(
-      children: [
-        TestQuestionScaffold(
-          title: 'الطلاقة اللفظية',
-          content: Column(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(30),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: _isRunning ? Colors.red : Colors.blue,
-                    width: 5,
-                  ),
-                ),
-                child: Text(
-                  '$_seconds',
-                  style: const TextStyle(
-                    fontSize: 64,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text('ثانية متبقية'),
-
-              const SizedBox(height: 40),
-
-              ElevatedButton.icon(
-                onPressed:
-                    (_isRunning || _isFinished || _isLoading)
-                        ? null
-                        : _startRecording,
-                icon: Icon(
-                  isHardware
-                      ? Icons.settings_remote
-                      : Icons.mic,
-                ),
-                label: Text(
-                  isHardware
-                      ? 'بدء التسجيل من الجهاز'
-                      : 'ابدأ الدقيقة',
-                ),
-              ),
-
-              if (_isFinished && !_isLoading)
-                const Padding(
-                  padding: EdgeInsets.only(top: 20),
-                  child: Text(
-                    '✅ انتهى الوقت، اضغط متابعة للتحليل',
-                    style: TextStyle(
-                      color: Colors.green,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          isNextEnabled: _isFinished && !_isLoading,
-          onNext: _submit,
-          onEndSession: () =>
-              Navigator.popUntil(context, (r) => r.isFirst),
-        ),
-
-        if (_isLoading)
-          Container(
-            color: Colors.black26,
-            child: const Center(
-              child: CircularProgressIndicator(),
+    return TestQuestionScaffold(
+      title: 'الطلاقة اللفظية',
+      content: Column(
+        children: [
+          Text(
+            '$_seconds',
+            style: const TextStyle(
+              fontSize: 60,
+              fontWeight: FontWeight.bold,
             ),
           ),
-      ],
+          const SizedBox(height: 30),
+          ElevatedButton(
+            onPressed: _isRecording ? null : _startRecording,
+            child: const Text('بدء التسجيل'),
+          ),
+        ],
+      ),
+      isNextEnabled: _isFinished && !_isLoading,
+      onNext: _submit,
+      onEndSession: () =>
+          Navigator.popUntil(context, (r) => r.isFirst),
     );
   }
 }
