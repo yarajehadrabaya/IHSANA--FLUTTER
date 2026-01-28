@@ -155,21 +155,41 @@ class _OrientationScreenState extends State<OrientationScreen> {
   Future<void> _stopHardware(String key) async {
     setState(() => _isLoading = true);
 
-    final res = await http.post(
-      Uri.parse('${SessionContext.raspberryBaseUrl}/stop-recording'),
-    );
+    try {
+      // 1️⃣ stop recording
+      await http.post(
+        Uri.parse('${SessionContext.raspberryBaseUrl}/stop-recording'),
+      );
 
-    final dir = await getTemporaryDirectory();
-    final file = File('${dir.path}/ori_${key}_hw.wav');
-    await file.writeAsBytes(res.bodyBytes);
+      // 2️⃣ get audio
+      final res = await http.get(
+        Uri.parse('${SessionContext.raspberryBaseUrl}/get-audio'),
+      );
 
-    setState(() {
-      _recordedPaths[key] = file.path;
+      if (res.statusCode != 200) {
+        throw Exception('GET audio failed');
+      }
+
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/ori_${key}_hw.wav');
+      await file.writeAsBytes(res.bodyBytes);
+
+      setState(() {
+        _recordedPaths[key] = file.path;
+        _isHardwareRecording = false;
+      });
+
+      debugPrint('✅ ORIENTATION HW SAVED: ${file.path}');
+      _moveNext();
+    } catch (e) {
+      debugPrint('❌ ORIENTATION HW ERROR: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('خطأ في تسجيل الجهاز الخارجي')),
+      );
       _isHardwareRecording = false;
-      _isLoading = false;
-    });
-
-    _moveNext();
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   // ================= ➡️ NEXT =================
@@ -191,11 +211,8 @@ class _OrientationScreenState extends State<OrientationScreen> {
     final int score = res['score'] ?? 0;
     TestSession.orientationScore = score;
 
-    // 🧠 LOG واضح
-    debugPrint('============== ORIENTATION RESULT ==============');
     debugPrint('🧠 ORIENTATION SCORE: $score');
     debugPrint('FULL RESPONSE: $res');
-    debugPrint('================================================');
 
     final result = MocaResult(
       visuospatial: TestSession.finalVisuospatial,

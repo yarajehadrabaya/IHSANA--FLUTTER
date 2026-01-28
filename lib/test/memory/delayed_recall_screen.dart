@@ -51,7 +51,7 @@ class _DelayedRecallScreenState extends State<DelayedRecallScreen> {
     super.dispose();
   }
 
-  // 🔊 تشغيل التعليمات
+  // ================= 🔊 INSTRUCTION =================
   Future<void> _playInstruction() async {
     try {
       setState(() => _isPlaying = true);
@@ -62,12 +62,12 @@ class _DelayedRecallScreenState extends State<DelayedRecallScreen> {
         if (mounted) setState(() => _isPlaying = false);
       });
     } catch (e) {
-      debugPrint('❌ Instruction audio error: $e');
+      debugPrint('❌ Instruction error: $e');
       setState(() => _isPlaying = false);
     }
   }
 
-  // 🎤 زر التسجيل
+  // ================= 🎤 RECORD BUTTON =================
   Future<void> _onRecordPressed() async {
     if (SessionContext.testMode == TestMode.hardware) {
       await _toggleHardwareRecording();
@@ -85,7 +85,6 @@ class _DelayedRecallScreenState extends State<DelayedRecallScreen> {
         _hasRecorded = true;
         _audioPath = path;
       });
-      debugPrint('✅ MEMORY MOBILE STOP: $path');
     } else {
       await _instructionPlayer.stop();
       final dir = await getTemporaryDirectory();
@@ -102,32 +101,49 @@ class _DelayedRecallScreenState extends State<DelayedRecallScreen> {
         _hasRecorded = false;
         _audioPath = null;
       });
-
-      debugPrint('🎙️ MEMORY MOBILE START');
     }
   }
 
-  // ================= 🖥️ HARDWARE =================
+  // ================= 🖥️ HARDWARE (مثل naming تماماً) =================
   Future<void> _toggleHardwareRecording() async {
     if (_hwRecording) {
       setState(() => _isLoading = true);
 
-      final res = await http.post(
-        Uri.parse('${SessionContext.raspberryBaseUrl}/stop-recording'),
-      );
+      try {
+        // 1️⃣ stop
+        await http.post(
+          Uri.parse('${SessionContext.raspberryBaseUrl}/stop-recording'),
+        );
 
-      final dir = await getTemporaryDirectory();
-      final file = File('${dir.path}/memory_hw.wav');
-      await file.writeAsBytes(res.bodyBytes);
+        // 2️⃣ get audio
+        final res = await http.get(
+          Uri.parse('${SessionContext.raspberryBaseUrl}/get-audio'),
+        );
 
-      setState(() {
-        _audioPath = file.path;
-        _hasRecorded = true;
+        if (res.statusCode != 200) {
+          throw Exception('GET audio failed');
+        }
+
+        final dir = await getTemporaryDirectory();
+        final file = File('${dir.path}/memory_hw.wav');
+        await file.writeAsBytes(res.bodyBytes);
+
+        setState(() {
+          _audioPath = file.path;
+          _hasRecorded = true;
+          _hwRecording = false;
+        });
+
+        debugPrint('✅ MEMORY HW SAVED: ${file.path}');
+      } catch (e) {
+        debugPrint('❌ MEMORY HW ERROR: $e');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('خطأ في تسجيل الجهاز الخارجي')),
+        );
         _hwRecording = false;
-        _isLoading = false;
-      });
-
-      debugPrint('✅ MEMORY HW STOP: ${file.path}');
+      } finally {
+        if (mounted) setState(() => _isLoading = false);
+      }
     } else {
       await _instructionPlayer.stop();
 
@@ -152,17 +168,12 @@ class _DelayedRecallScreenState extends State<DelayedRecallScreen> {
 
     try {
       final res = await _apiService.checkMemory(_audioPath!);
+      final score = res['score'] ?? 0;
 
-      final int score = res['score'] ?? 0;
       TestSession.memoryScore = score;
 
-      // 🧠 LOG واضح
-      debugPrint('================ MEMORY RESULT ================');
       debugPrint('🧠 MEMORY SCORE: $score');
       debugPrint('FULL RESPONSE: $res');
-      debugPrint('Patient Said: ${res['patient_said']}');
-      debugPrint('Analysis: ${res['analysis']}');
-      debugPrint('==============================================');
 
       if (!mounted) return;
 
@@ -174,16 +185,15 @@ class _DelayedRecallScreenState extends State<DelayedRecallScreen> {
       );
     } catch (e) {
       debugPrint('❌ MEMORY SUBMIT ERROR: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('خطأ في التحليل: $e')),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('خطأ في التحليل')),
+      );
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
+  // ================= UI =================
   @override
   Widget build(BuildContext context) {
     final bool isHardware = SessionContext.testMode == TestMode.hardware;
@@ -197,11 +207,7 @@ class _DelayedRecallScreenState extends State<DelayedRecallScreen> {
               : 'اذكر الكلمات الخمس التي سمعتها في بداية الاختبار.',
           content: Column(
             children: [
-              const Icon(
-                Icons.psychology_alt,
-                size: 90,
-                color: Colors.purple,
-              ),
+              const Icon(Icons.psychology_alt, size: 90, color: Colors.purple),
               const SizedBox(height: 30),
 
               if (!_isRecording && !_isLoading)
@@ -233,7 +239,7 @@ class _DelayedRecallScreenState extends State<DelayedRecallScreen> {
                 ),
               ),
 
-              if (_hasRecorded && !_isRecording)
+              if (_hasRecorded)
                 const Padding(
                   padding: EdgeInsets.only(top: 12),
                   child: Text(
@@ -246,7 +252,7 @@ class _DelayedRecallScreenState extends State<DelayedRecallScreen> {
                 ),
             ],
           ),
-          isNextEnabled: _hasRecorded && !_isRecording && !_isLoading,
+          isNextEnabled: _hasRecorded && !_isLoading,
           onNext: _submitAndNext,
           onEndSession: () =>
               Navigator.popUntil(context, (r) => r.isFirst),
@@ -255,9 +261,7 @@ class _DelayedRecallScreenState extends State<DelayedRecallScreen> {
         if (_isLoading)
           Container(
             color: Colors.black26,
-            child: const Center(
-              child: CircularProgressIndicator(),
-            ),
+            child: const Center(child: CircularProgressIndicator()),
           ),
       ],
     );
