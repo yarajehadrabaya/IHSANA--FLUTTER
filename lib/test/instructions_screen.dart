@@ -13,68 +13,107 @@ class InstructionsScreen extends StatelessWidget {
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Center(
-              child: SingleChildScrollView(
-                child: Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: AppTheme.cardDecoration,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      // 🧠 العنوان
-                      Text(
-                        'تعليمات الاختبار',
-                        style: Theme.of(context)
-                            .textTheme
-                            .headlineMedium,
-                        textAlign: TextAlign.center,
+            child: Column(
+              children: [
+                // ===== زر الرجوع (إضافة فقط) =====
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(24),
+                    onTap: () {
+                      Navigator.pop(context); // ✅ رجوع لصفحة TestMode
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.08),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
                       ),
-
-                      const SizedBox(height: 16),
-
-                      _InstructionItem(
-                        icon: Icons.timer,
-                        text:
-                            'مدة الاختبار تقريباً 10 إلى 15 دقيقة.',
+                      child: const Icon(
+                        Icons.arrow_back_ios_new,
+                        size: 22,
+                        color: Colors.black87,
                       ),
-
-                      _InstructionItem(
-                        icon: Icons.volume_off,
-                        text:
-                            'يرجى الجلوس في مكان هادئ بدون مقاطعة.',
-                      ),
-
-                      _InstructionItem(
-                        icon: Icons.check_circle_outline,
-                        text:
-                            'أجب عن الأسئلة حسب أفضل ما تستطيع.',
-                      ),
-
-                      _InstructionItem(
-                        icon: Icons.stop_circle_outlined,
-                        text:
-                            'يمكنك إنهاء الجلسة في أي وقت.',
-                      ),
-
-                      const SizedBox(height: 32),
-
-                      // ▶️ ابدأ الاختبار
-                      ElevatedButton(
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) =>
-                                  const OrientationLocationScreen(),
-                            ),
-                          );
-                        },
-                        child: const Text('ابدأ الاختبار'),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
-              ),
+
+                const SizedBox(height: 16),
+
+                // ===== المحتوى الأصلي بدون أي تغيير =====
+                Expanded(
+                  child: Center(
+                    child: SingleChildScrollView(
+                      child: Container(
+                        padding: const EdgeInsets.all(24),
+                        decoration: AppTheme.cardDecoration,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            // 🧠 العنوان
+                            Text(
+                              'تعليمات الاختبار',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .headlineMedium,
+                              textAlign: TextAlign.center,
+                            ),
+
+                            const SizedBox(height: 16),
+
+                            _InstructionItem(
+                              icon: Icons.timer,
+                              text:
+                                  'مدة الاختبار تقريباً 10 إلى 15 دقيقة.',
+                            ),
+
+                            _InstructionItem(
+                              icon: Icons.volume_off,
+                              text:
+                                  'يرجى الجلوس في مكان هادئ بدون مقاطعة.',
+                            ),
+
+                            _InstructionItem(
+                              icon: Icons.check_circle_outline,
+                              text:
+                                  'أجب عن الأسئلة حسب أفضل ما تستطيع.',
+                            ),
+
+                            _InstructionItem(
+                              icon: Icons.stop_circle_outlined,
+                              text:
+                                  'يمكنك إنهاء الجلسة في أي وقت.',
+                            ),
+
+                            const SizedBox(height: 32),
+
+                            // ▶️ ابدأ الاختبار
+                            ElevatedButton(
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        const OrientationLocationScreen(),
+                                  ),
+                                );
+                              },
+                              child: const Text('ابدأ الاختبار'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),

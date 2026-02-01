@@ -4,7 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import '../theme/app_theme.dart';
 import '../widgets/app_background.dart';
-import '../session/session_context.dart'; // ✅ الملف الذي سيخزن الخيار
+import '../session/session_context.dart';
 import 'instructions_screen.dart';
 
 // ✅ الـ Enum موجود لتعريف الخيارات
@@ -34,7 +34,6 @@ class _TestModeSelectionScreenState extends State<TestModeSelectionScreen> {
           .doc(user.uid)
           .collection('sessions');
 
-      // 1. الحفظ في الفايربيس للتوثيق
       final newSession = await sessionsRef.add({
         'capture_mode': _selectedMode == TestMode.mobile
             ? 'جوال'
@@ -45,13 +44,8 @@ class _TestModeSelectionScreenState extends State<TestModeSelectionScreen> {
         'test_version': 'MoCA 8.1',
       });
 
-      // 2. ✅ أهم خطوة: حفظ الخيار "محلياً" في الذاكرة لتستخدمه باقي الشاشات
       SessionContext.sessionId = newSession.id;
-      SessionContext.testMode = _selectedMode; // حفظ (mobile أو hardware)
-
-      debugPrint(
-        "--- [SYSTEM] تم اختيار وضع الاختبار: ${SessionContext.testMode} ---",
-      );
+      SessionContext.testMode = _selectedMode;
 
       if (!mounted) return;
 
@@ -75,60 +69,103 @@ class _TestModeSelectionScreenState extends State<TestModeSelectionScreen> {
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'طريقة إجراء الاختبار',
-                    style: Theme.of(context).textTheme.headlineMedium,
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'اختر الطريقة الأنسب لإجراء الاختبار',
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 32),
-
-                  // بطاقة الهاتف
-                  _ModeCard(
-                    icon: Icons.smartphone,
-                    title: 'على الهاتف',
-                    description: 'استخدام شاشة الهاتف والمايك والكاميرا',
-                    selected: _selectedMode == TestMode.mobile,
-                    onTap: () => setState(() {
-                      _selectedMode = TestMode.mobile;
-                    }),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // بطاقة الجهاز الخارجي
-                  _ModeCard(
-                    icon: Icons.memory,
-                    title: 'باستخدام جهاز خارجي',
-                    description:
-                        'استخدام جهاز مخصص (الرايزبري باي) مع كاميرا ومايك',
-                    selected: _selectedMode == TestMode.hardware,
-                    onTap: () => setState(() {
-                      _selectedMode = TestMode.hardware;
-                    }),
-                  ),
-                  const SizedBox(height: 32),
-
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: _selectedMode == null || _loading
-                          ? null
-                          : _startSession,
-                      child: _loading
-                          ? const CircularProgressIndicator(color: Colors.white)
-                          : const Text('متابعة'),
+            child: Column(
+              children: [
+                // ===== زر الرجوع (مصحّح RTL + أوضح) =====
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(24),
+                    onTap: () {
+                      Navigator.pop(context);
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.08),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.arrow_back_ios_new, // ✅ صحيح لـ RTL
+                        size: 22,
+                        color: Colors.black87,
+                      ),
                     ),
                   ),
-                ],
-              ),
+                ),
+
+                const SizedBox(height: 16),
+
+                // ===== المحتوى الأصلي =====
+                Expanded(
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'طريقة إجراء الاختبار',
+                          style:
+                              Theme.of(context).textTheme.headlineMedium,
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'اختر الطريقة الأنسب لإجراء الاختبار',
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 32),
+
+                        _ModeCard(
+                          icon: Icons.smartphone,
+                          title: 'على الهاتف',
+                          description:
+                              'استخدام شاشة الهاتف والمايك والكاميرا',
+                          selected:
+                              _selectedMode == TestMode.mobile,
+                          onTap: () => setState(() {
+                            _selectedMode = TestMode.mobile;
+                          }),
+                        ),
+                        const SizedBox(height: 16),
+
+                        _ModeCard(
+                          icon: Icons.memory,
+                          title: 'باستخدام جهاز خارجي',
+                          description:
+                              'استخدام جهاز مخصص (الرايزبري باي) مع كاميرا ومايك',
+                          selected:
+                              _selectedMode == TestMode.hardware,
+                          onTap: () => setState(() {
+                            _selectedMode = TestMode.hardware;
+                          }),
+                        ),
+                        const SizedBox(height: 32),
+
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed:
+                                _selectedMode == null || _loading
+                                    ? null
+                                    : _startSession,
+                            child: _loading
+                                ? const CircularProgressIndicator(
+                                    color: Colors.white)
+                                : const Text('متابعة'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -167,7 +204,8 @@ class _ModeCard extends StatelessWidget {
             color: selected ? AppTheme.primary : Colors.grey.shade300,
             width: 2,
           ),
-          color: selected ? AppTheme.primary.withOpacity(0.08) : Colors.white,
+          color:
+              selected ? AppTheme.primary.withOpacity(0.08) : Colors.white,
         ),
         child: Row(
           children: [
@@ -191,7 +229,8 @@ class _ModeCard extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     description,
-                    style: Theme.of(context).textTheme.bodySmall,
+                    style:
+                        Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
               ),

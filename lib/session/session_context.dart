@@ -6,7 +6,7 @@ class SessionContext {
   // وضع الاختبار
   static TestMode? testMode;
 
-  // ✅ IP الرازبيري + البورت
+  // IP الرازبيري + البورت
   static String raspberryBaseUrl = 'http://10.74.124.111:5000';
 
   static void clear() {
@@ -14,3 +14,4 @@ class SessionContext {
     testMode = null;
   }
 }
+

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../settings/settings_screen.dart';
 
 import '../theme/app_theme.dart';
 import '../widgets/app_background.dart';
@@ -81,7 +82,12 @@ class HomeScreen extends StatelessWidget {
                   label: 'الإعدادات',
                   icon: Icons.settings,
                   onPressed: () {
-                    // لاحقاً: Settings / Edit Profile
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const SettingsScreen(),
+                      ),
+                    );
                   },
                 ),
 

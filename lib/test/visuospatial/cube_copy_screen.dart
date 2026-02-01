@@ -46,12 +46,9 @@ class _CubeCopyScreenState extends State<CubeCopyScreen> {
       await _instructionPlayer.play(
         AssetSource('audio/cube.mp3'),
       );
-    } catch (e) {
-      debugPrint('❌ Instruction error: $e');
-    }
+    } catch (_) {}
   }
 
-  // ================= 📱 MOBILE =================
   Future<void> _captureImageMobile() async {
     setState(() {
       _imageBytes = null;
@@ -70,11 +67,8 @@ class _CubeCopyScreenState extends State<CubeCopyScreen> {
       _imagePath = image.path;
       _imageBytes = bytes;
     });
-
-    debugPrint('📸 MOBILE image (${bytes.length} bytes)');
   }
 
-  // ================= 🖥️ HARDWARE =================
   Future<void> _captureImageHardware() async {
     setState(() {
       _isLoading = true;
@@ -83,7 +77,6 @@ class _CubeCopyScreenState extends State<CubeCopyScreen> {
     });
 
     try {
-      // ⬅️ هذا هو المهم: استخدام الدالة الحالية تبعتك
       final imagePath = await HardwareCaptureService.captureImage();
       final file = File(imagePath);
       final bytes = await file.readAsBytes();
@@ -92,10 +85,7 @@ class _CubeCopyScreenState extends State<CubeCopyScreen> {
         _imagePath = imagePath;
         _imageBytes = bytes;
       });
-
-      debugPrint('📷 HARDWARE image (${bytes.length} bytes)');
-    } catch (e) {
-      debugPrint('❌ Hardware capture error: $e');
+    } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('خطأ في التقاط الصورة')),
@@ -108,7 +98,6 @@ class _CubeCopyScreenState extends State<CubeCopyScreen> {
     }
   }
 
-  // ================= 🚀 ANALYZE =================
   Future<void> _submitAndAnalyze() async {
     if (_imagePath == null) return;
 
@@ -122,9 +111,8 @@ class _CubeCopyScreenState extends State<CubeCopyScreen> {
 
       TestSession.cubeScore = result['score'] ?? 0;
 
-      debugPrint('🧠 CUBE RESULT: $result');
-
       if (mounted) {
+        TestSession.nextQuestion();
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -132,8 +120,7 @@ class _CubeCopyScreenState extends State<CubeCopyScreen> {
           ),
         );
       }
-    } catch (e) {
-      debugPrint('❌ Cube analyze error: $e');
+    } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('خطأ في تحليل الصورة')),
@@ -162,31 +149,56 @@ class _CubeCopyScreenState extends State<CubeCopyScreen> {
           ),
           const SizedBox(height: 20),
 
-          ElevatedButton.icon(
-            icon: const Icon(Icons.camera_alt),
-            label: Text(isMobile ? 'التقاط بالجوال' : 'التقاط من الجهاز'),
-            onPressed: _isLoading
-                ? null
-                : (isMobile
-                    ? _captureImageMobile
-                    : _captureImageHardware),
+          // ===== زر الالتقاط / إعادة الالتقاط =====
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              icon: Icon(
+                _imageBytes == null ? Icons.camera_alt : Icons.refresh,
+              ),
+              label: Text(
+                _imageBytes == null
+                    ? (isMobile ? 'التقاط بالجوال' : 'التقاط من الجهاز')
+                    : 'إعادة التقاط الصورة',
+                textAlign: TextAlign.center,
+              ),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(
+                  vertical: 14,
+                  horizontal: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+              onPressed: _isLoading
+                  ? null
+                  : (isMobile
+                      ? _captureImageMobile
+                      : _captureImageHardware),
+            ),
           ),
 
           const SizedBox(height: 20),
 
+          // ===== معاينة الصورة =====
           Container(
             width: 260,
             height: 260,
             decoration: BoxDecoration(
               border: Border.all(color: Colors.grey.shade300),
+              borderRadius: BorderRadius.circular(12),
             ),
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : (_imageBytes != null
-                    ? Image.memory(
-                        _imageBytes!,
-                        key: ValueKey(_imagePath),
-                        fit: BoxFit.contain,
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.memory(
+                          _imageBytes!,
+                          key: ValueKey(_imagePath),
+                          fit: BoxFit.contain,
+                        ),
                       )
                     : const Center(child: Text('لا توجد صورة'))),
           ),

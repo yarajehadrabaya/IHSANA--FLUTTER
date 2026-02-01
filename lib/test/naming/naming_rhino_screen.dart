@@ -38,7 +38,6 @@ class _NamingRhinoScreenState extends State<NamingRhinoScreen> {
     super.dispose();
   }
 
-  // ================= 🎛 RECORD BUTTON =================
   Future<void> _onRecordPressed() async {
     if (SessionContext.testMode == TestMode.hardware) {
       if (_isRecording) {
@@ -51,7 +50,6 @@ class _NamingRhinoScreenState extends State<NamingRhinoScreen> {
     }
   }
 
-  // ================= 📱 MOBILE =================
   Future<void> _recordFromMobile() async {
     if (_isRecording) {
       final path = await _recorder!.stopRecorder();
@@ -74,21 +72,19 @@ class _NamingRhinoScreenState extends State<NamingRhinoScreen> {
     }
   }
 
-  // ================= 🖥️ HARDWARE =================
   Future<void> _startHardwareRecording() async {
     setState(() {
       _isRecording = true;
       _rhinoPath = null;
     });
 
-    final uri =
-        Uri.parse('${SessionContext.raspberryBaseUrl}/start-recording');
-    await http.post(uri);
+    await http.post(
+      Uri.parse('${SessionContext.raspberryBaseUrl}/start-recording'),
+    );
   }
 
   Future<void> _stopHardwareRecording() async {
     setState(() => _isLoading = true);
-
     try {
       await http.post(
         Uri.parse('${SessionContext.raspberryBaseUrl}/stop-recording'),
@@ -107,20 +103,12 @@ class _NamingRhinoScreenState extends State<NamingRhinoScreen> {
           _rhinoPath = file.path;
           _isRecording = false;
         });
-      } else {
-        throw Exception('Hardware error');
       }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('خطأ في تسجيل الجهاز الخارجي')),
-      );
-      setState(() => _isRecording = false);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  // ================= UI =================
   @override
   Widget build(BuildContext context) {
     return TestQuestionScaffold(
@@ -130,21 +118,31 @@ class _NamingRhinoScreenState extends State<NamingRhinoScreen> {
           Image.asset('assets/images/rhino.png', height: 200),
           const SizedBox(height: 24),
 
-          ElevatedButton.icon(
-            onPressed: _isLoading ? null : _onRecordPressed,
-            icon: Icon(
-              SessionContext.testMode == TestMode.hardware
-                  ? (_isRecording ? Icons.stop : Icons.memory)
-                  : (_isRecording ? Icons.stop : Icons.mic),
-            ),
-            label: Text(
-              _isRecording ? 'إيقاف التسجيل' : 'تسجيل الإجابة',
-            ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _isRecording ? Colors.red : null,
-              foregroundColor: _isRecording ? Colors.white : null,
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _isLoading ? null : _onRecordPressed,
+              icon: Icon(_isRecording ? Icons.stop : Icons.mic),
+              label: Text(
+                  _isRecording ? 'إيقاف التسجيل' : 'تسجيل الإجابة'),
+              style: ElevatedButton.styleFrom(
+                padding:
+                    const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                backgroundColor: _isRecording ? Colors.red : null,
+                foregroundColor: _isRecording ? Colors.white : null,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
             ),
           ),
+
+          if (_isRecording)
+            const Padding(
+              padding: EdgeInsets.only(top: 16),
+              child: Text('🎙️ جاري التسجيل...',
+                  style: TextStyle(color: Colors.red)),
+            ),
 
           if (_rhinoPath != null && !_isRecording)
             const Padding(

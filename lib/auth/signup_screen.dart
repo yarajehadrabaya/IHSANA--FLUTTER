@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_background.dart';
 import '../profile/profile_setup_screen.dart';
+import '../auth/login_screen.dart';
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
@@ -16,14 +17,18 @@ class SignupScreen extends StatefulWidget {
 
 class _SignupScreenState extends State<SignupScreen> {
   bool _obscurePassword = true;
+  bool _isLoading = false;
 
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
 
+  String? _nameErrorText;
+  String? _emailErrorText;
+  String? _passwordErrorText;
+
   String? _emailHint;
   String? _passwordHint;
-  bool _isLoading = false;
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -46,7 +51,7 @@ class _SignupScreenState extends State<SignupScreen> {
               ),
             ),
             Expanded(
-              child: Padding(
+              child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
                 child: Column(
                   children: [
@@ -56,6 +61,7 @@ class _SignupScreenState extends State<SignupScreen> {
                     ),
                     const SizedBox(height: 12),
                     _signupCard(),
+                    const SizedBox(height: 24),
                   ],
                 ),
               ),
@@ -73,64 +79,149 @@ class _SignupScreenState extends State<SignupScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // الاسم
           TextField(
             controller: _nameController,
-            decoration: const InputDecoration(
+            onChanged: (_) => setState(() => _nameErrorText = null),
+            decoration: InputDecoration(
               labelText: 'الاسم الكامل',
-              prefixIcon: Icon(Icons.person_outline),
+              prefixIcon: const Icon(Icons.person_outline),
+              errorText: _nameErrorText,
             ),
           ),
+
           const SizedBox(height: 12),
 
+          // البريد
           TextField(
             controller: _emailController,
             keyboardType: TextInputType.emailAddress,
-            onChanged: (v) =>
-                setState(() => _emailHint = v.contains('@') ? null : 'مثال: example@email.com'),
+            onChanged: (v) {
+              setState(() {
+                _emailHint =
+                    v.contains('@') ? null : 'مثال: example@email.com';
+                _emailErrorText = null;
+              });
+            },
             decoration: InputDecoration(
               labelText: 'البريد الإلكتروني',
               prefixIcon: const Icon(Icons.email_outlined),
               helperText: _emailHint,
+              errorText: _emailErrorText,
             ),
           ),
+
           const SizedBox(height: 12),
 
+          // كلمة المرور
           TextField(
             controller: _passwordController,
             obscureText: _obscurePassword,
-            onChanged: (v) =>
-                setState(() => _passwordHint = v.length < 6 ? 'كلمة المرور 6 أحرف على الأقل' : null),
+            onChanged: (v) {
+              setState(() {
+                _passwordHint =
+                    v.length < 6 ? 'كلمة المرور 6 أحرف على الأقل' : null;
+                _passwordErrorText = null;
+              });
+            },
             decoration: InputDecoration(
               labelText: 'كلمة المرور',
               prefixIcon: const Icon(Icons.lock_outline),
               helperText: _passwordHint,
+              errorText: _passwordErrorText,
               suffixIcon: IconButton(
-                icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility),
-                onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                icon: Icon(
+                  _obscurePassword
+                      ? Icons.visibility_off
+                      : Icons.visibility,
+                ),
+                onPressed: () =>
+                    setState(() => _obscurePassword = !_obscurePassword),
               ),
             ),
           ),
 
           const SizedBox(height: 20),
 
+          // زر إنشاء حساب
           ElevatedButton(
             onPressed: _isLoading ? null : _signup,
             child: _isLoading
-                ? const CircularProgressIndicator()
+                ? const SizedBox(
+                    height: 22,
+                    width: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
                 : const Text('إنشاء حساب'),
+          ),
+
+          // ✅ زر الرجوع لتسجيل الدخول (تصميم فقط)
+          const SizedBox(height: 16),
+
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text('لديك حساب بالفعل؟'),
+              TextButton(
+                onPressed: () {
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const LoginScreen(),
+                    ),
+                  );
+                },
+                child: const Text(
+                  'تسجيل الدخول',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
+  /* ===================== SIGNUP LOGIC (بدون تغيير) ===================== */
+
   Future<void> _signup() async {
     final name = _nameController.text.trim();
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
 
-    if (name.isEmpty || email.isEmpty || password.isEmpty) {
-      _showError('يرجى تعبئة جميع الحقول');
+    setState(() {
+      _nameErrorText = null;
+      _emailErrorText = null;
+      _passwordErrorText = null;
+    });
+
+    bool hasError = false;
+    final emailRegex = RegExp(r'^[^@]+@[^@]+\.[^@]+');
+
+    if (name.isEmpty) {
+      _nameErrorText = 'يرجى إدخال الاسم الكامل';
+      hasError = true;
+    }
+
+    if (email.isEmpty) {
+      _emailErrorText = 'يرجى إدخال البريد الإلكتروني';
+      hasError = true;
+    } else if (!emailRegex.hasMatch(email)) {
+      _emailErrorText = 'يرجى إدخال بريد إلكتروني بصيغة صحيحة';
+      hasError = true;
+    }
+
+    if (password.isEmpty) {
+      _passwordErrorText = 'يرجى إدخال كلمة المرور';
+      hasError = true;
+    } else if (password.length < 6) {
+      _passwordErrorText = 'كلمة المرور يجب أن تكون 6 أحرف على الأقل';
+      hasError = true;
+    }
+
+    if (hasError) {
+      setState(() {});
       return;
     }
 
@@ -149,32 +240,22 @@ class _SignupScreenState extends State<SignupScreen> {
         'createdAt': FieldValue.serverTimestamp(),
       });
 
+      if (!mounted) return;
+
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => const ProfileSetupScreen()),
+        MaterialPageRoute(
+          builder: (_) => const ProfileSetupScreen(),
+        ),
       );
     } on FirebaseAuthException catch (e) {
-      _showError(e.code == 'email-already-in-use'
-          ? 'البريد مستخدم مسبقًا'
-          : 'حدث خطأ');
+      setState(() {
+        _emailErrorText = e.code == 'email-already-in-use'
+            ? 'البريد الإلكتروني مستخدم مسبقًا'
+            : 'حدث خطأ أثناء إنشاء الحساب';
+      });
     } finally {
       setState(() => _isLoading = false);
     }
-  }
-
-  void _showError(String msg) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('خطأ'),
-        content: Text(msg),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('حسناً'),
-          ),
-        ],
-      ),
-    );
   }
 }

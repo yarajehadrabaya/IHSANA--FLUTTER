@@ -32,7 +32,7 @@ class _TrailMakingScreenState extends State<TrailMakingScreen> {
   void initState() {
     super.initState();
     _loadImage();
-    _playInstruction(); // ✅ تشغيل صوت tmt.mp3 فوراً
+    _playInstruction();
   }
 
   @override
@@ -43,18 +43,13 @@ class _TrailMakingScreenState extends State<TrailMakingScreen> {
 
   Future<void> _playInstruction() async {
     try {
-      // ✅ المسار الصحيح للمكتبة (بدون assets/)
       await _audioPlayer.play(AssetSource('audio/tmt.mp3'));
-    } catch (e) {
-      debugPrint("Error playing TMT audio: $e");
-    }
+    } catch (_) {}
   }
 
   Future<void> _loadImage() async {
-    // تحميل صورة النقاط الخلفية
-    final data = await DefaultAssetBundle.of(
-      context,
-    ).load('assets/images/trail_making.png');
+    final data = await DefaultAssetBundle.of(context)
+        .load('assets/images/trail_making.png');
     final img = await decodeImageFromList(data.buffer.asUint8List());
     setState(() => bgImage = img);
   }
@@ -68,7 +63,6 @@ class _TrailMakingScreenState extends State<TrailMakingScreen> {
     if (startTime == null) return;
     final t = DateTime.now().difference(startTime!).inMilliseconds / 1000.0;
 
-    // ✅ حفظ الإحداثيات المطبّعة (nx, ny) لضمان الدقة على أي شاشة
     points.add(
       DrawPoint(
         x: pos.dx,
@@ -81,54 +75,37 @@ class _TrailMakingScreenState extends State<TrailMakingScreen> {
     setState(() {});
   }
 
-  // 🚀 دالة الإرسال والتحليل والانتقال للمكعب
   Future<void> _submitAndAnalyze(Size canvasSize) async {
     if (points.isEmpty) return;
 
     setState(() => _isLoading = true);
     try {
-      // 1. إعادة عينة النقاط لتقليل حجم البيانات
       final resampled = resample(points, 0.05);
 
-      // 2. تجهيز بيانات الـ JSON
       final data = {
         "canvasWidth": canvasSize.width,
         "canvasHeight": canvasSize.height,
         "points": resampled.map((e) => e.toJson()).toList(),
       };
 
-      // 3. إنشاء ملف JSON مؤقت
       final tempDir = await getTemporaryDirectory();
       final tempFile = File('${tempDir.path}/tmt_data.json');
       await tempFile.writeAsString(jsonEncode(data));
 
-      // 4. نداء الـ API الخاص بالتوصيل (يرسل ملف JSON)
       final result = await _apiService.checkTrails(tempFile.path);
-
-      // -----------------------------------------------------------
-      // >>> [تحقق] طباعة النتيجة في الكونسول <<<
-      debugPrint("--- !!! TMT TEST RESULT !!! ---");
-      debugPrint("Score from API: ${result['score']}");
-      debugPrint("Analysis: ${result['analysis']}");
-      debugPrint("-------------------------------");
-      // -----------------------------------------------------------
-
-      // ✅ حفظ النتيجة في الخزنة (نقطة واحدة)
       TestSession.trailsScore = (result['score'] as int? ?? 0);
 
       if (mounted) {
-        // ✅ الانتقال التلقائي لشاشة رسم المكعب
         Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => const CubeCopyScreen()),
         );
       }
-    } catch (e) {
-      debugPrint("Error in TMT submission: $e");
+    } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("خطأ في التحليل: $e")));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('خطأ في التحليل')),
+        );
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -141,86 +118,155 @@ class _TrailMakingScreenState extends State<TrailMakingScreen> {
       children: [
         Scaffold(
           backgroundColor: AppTheme.background,
-          appBar: AppBar(
-            title: const Text('تتبّع المسار'),
-            automaticallyImplyLeading: false,
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.popUntil(context, (r) => r.isFirst),
-                child: const Text(
-                  'إنهاء الجلسة',
-                  style: TextStyle(color: Colors.red),
-                ),
-              ),
-            ],
-          ),
-          body: Column(
-            children: [
-              const Padding(
-                padding: EdgeInsets.all(16),
-                child: Text(
-                  'اربط الأرقام والحروف بالتناوب (1-أ-2-ب...) دون رفع إصبعك عن الشاشة',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-              ),
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final canvasSize = Size(
-                      constraints.maxWidth,
-                      constraints.maxHeight,
-                    );
-                    if (bgImage == null)
-                      return const Center(child: CircularProgressIndicator());
+          body: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Column(
+                children: [
+                  const SizedBox(height: 8),
+                  Text(
+                    'تتبّع المسار',
+                    style: Theme.of(context)
+                        .textTheme
+                        .headlineSmall
+                        ?.copyWith(fontWeight: FontWeight.w600),
+                    textAlign: TextAlign.center,
+                  ),
 
-                    return GestureDetector(
-                      onPanStart: (d) =>
-                          _startDraw(d.localPosition, canvasSize),
-                      onPanUpdate: (d) =>
-                          _addPoint(d.localPosition, canvasSize),
-                      child: CustomPaint(
-                        size: canvasSize,
-                        painter: DrawingPainter(points, bgImage!),
+                  TextButton.icon(
+                    onPressed: () => Navigator.popUntil(
+                        context, (r) => r.isFirst),
+                    icon: const Icon(
+                      Icons.warning_amber_rounded,
+                      size: 18,
+                      color: Colors.red,
+                    ),
+                    label: const Text(
+                      'إنهاء الجلسة',
+                      style: TextStyle(
+                        color: Colors.red,
+                        fontWeight: FontWeight.w600,
                       ),
-                    );
-                  },
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    OutlinedButton.icon(
-                      onPressed: () {
-                        setState(() {
-                          points.clear();
-                          startTime = null;
-                        });
-                      },
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('إعادة الرسم'),
                     ),
-                    const SizedBox(width: 16),
-                    ElevatedButton.icon(
-                      onPressed: points.isEmpty || _isLoading
-                          ? null
-                          : () {
-                              // نأخذ حجم الـ Canvas الحالي لإرساله بدقة
-                              final RenderBox box =
-                                  context.findRenderObject() as RenderBox;
-                              _submitAndAnalyze(box.size);
-                            },
-                      icon: const Icon(Icons.check_circle),
-                      label: const Text('إنهاء وتحليل'),
+                  ),
+
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primary.withOpacity(0.06),
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                  ],
-                ),
+                    child: const Text(
+                      'اربط الأرقام والحروف بالتناوب (1-أ-2-ب...) دون رفع إصبعك عن الشاشة',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 15,
+                        height: 1.5,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: AppTheme.cardDecoration,
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final canvasSize = Size(
+                            constraints.maxWidth,
+                            constraints.maxHeight,
+                          );
+
+                          if (bgImage == null) {
+                            return const Center(
+                                child: CircularProgressIndicator());
+                          }
+
+                          return GestureDetector(
+                            onPanStart: (d) =>
+                                _startDraw(d.localPosition, canvasSize),
+                            onPanUpdate: (d) =>
+                                _addPoint(d.localPosition, canvasSize),
+                            child: CustomPaint(
+                              size: canvasSize,
+                              painter: DrawingPainter(points, bgImage!),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // ===== أزرار موحّدة 100% =====
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            setState(() {
+                              points.clear();
+                              startTime = null;
+                            });
+                          },
+                          icon: const Icon(Icons.refresh),
+                          label: const Text(
+                            'إعادة الرسم',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size.fromHeight(56),
+                            padding: const EdgeInsets.symmetric(
+                                vertical: 14, horizontal: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: points.isEmpty || _isLoading
+                              ? null
+                              : () {
+                                  final RenderBox box =
+                                      context.findRenderObject() as RenderBox;
+                                  _submitAndAnalyze(box.size);
+                                },
+                          icon: const Icon(Icons.check_circle_outline),
+                          label: const Text(
+                            'إنهاء وتحليل',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              height: 1.2,
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            minimumSize: const Size.fromHeight(56),
+                            padding: const EdgeInsets.symmetric(
+                                vertical: 14, horizontal: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 16),
+                ],
               ),
-            ],
+            ),
           ),
         ),
+
         if (_isLoading)
           Container(
             color: Colors.black26,

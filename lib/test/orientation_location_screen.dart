@@ -1,22 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:ihsana/test/abstraction/abstraction_question_one_screen.dart';
-import 'package:ihsana/test/attention/digit_span_backward_screen.dart';
-import 'package:ihsana/test/attention/digit_span_forward_screen.dart';
-import 'package:ihsana/test/attention/subtraction_screen.dart';
-import 'package:ihsana/test/language/sentence_repetition_screen_one.dart';
-import 'package:ihsana/test/language/sentence_repetition_screen_two.dart';
-import 'package:ihsana/test/language/verbal_fluency_screen.dart';
-import 'package:ihsana/test/memory/delayed_recall_screen.dart';
-import 'package:ihsana/test/naming/naming_lion_screen.dart';
-import 'package:ihsana/test/visuospatial/clock_drawing_screen.dart';
-import 'package:ihsana/test/visuospatial/trail_making_screen.dart';
 
 import '../theme/app_theme.dart';
 import '../widgets/app_background.dart';
 import '../session/session_context.dart';
-import 'visuospatial/cube_copy_screen.dart';
+import 'visuospatial/trail_making_screen.dart';
 
 class OrientationLocationScreen extends StatefulWidget {
   const OrientationLocationScreen({super.key});
@@ -80,36 +69,109 @@ class _OrientationLocationScreenState
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Column(
               children: [
-                Text('أين أنت الآن؟',
-                    style: Theme.of(context).textTheme.headlineMedium),
-                const SizedBox(height: 32),
-
-                _LargeInputField(
-                  controller: _cityController,
-                  label: 'المدينة',
-                  icon: Icons.location_city,
-                  onChanged: () => setState(() {}),
+                // ===== زر الرجوع =====
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(24),
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.08),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.arrow_back_ios_new,
+                        size: 22,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ),
                 ),
-                const SizedBox(height: 20),
 
-                _LargeInputField(
-                  controller: _placeController,
-                  label: 'المكان',
-                  icon: Icons.place,
-                  onChanged: () => setState(() {}),
-                ),
-                const Spacer(),
+                const SizedBox(height: 16),
 
-                ElevatedButton(
-                  onPressed:
-                      !_canContinue || _loading ? null : _saveLocation,
-                  child: _loading
-                      ? const CircularProgressIndicator(
-                          color: Colors.white,
-                        )
-                      : const Text('متابعة'),
+                // ===== الكرت الرئيسي =====
+                Expanded(
+                  child: Center(
+                    child: SingleChildScrollView(
+                      child: Container(
+                        padding: const EdgeInsets.all(24),
+                        decoration: AppTheme.cardDecoration,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(
+                              'أين أنت الآن؟',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .headlineMedium,
+                              textAlign: TextAlign.center,
+                            ),
+
+                            const SizedBox(height: 24),
+
+                            _LargeInputField(
+                              controller: _cityController,
+                              label: 'المدينة',
+                              icon: Icons.location_city,
+                              onChanged: () => setState(() {}),
+                            ),
+                            const SizedBox(height: 20),
+
+                            _LargeInputField(
+                              controller: _placeController,
+                              label: 'المكان',
+                              icon: Icons.place,
+                              onChanged: () => setState(() {}),
+                            ),
+
+                            const SizedBox(height: 32),
+
+                            // ===== زر المتابعة (مصحّح) =====
+                            SizedBox(
+                              width: double.infinity,
+                              height: 56,
+                              child: ElevatedButton(
+                                onPressed: !_canContinue || _loading
+                                    ? null
+                                    : _saveLocation,
+                                style: ElevatedButton.styleFrom(
+                                  alignment: Alignment.center,
+                                ),
+                                child: _loading
+                                    ? const SizedBox(
+                                        height: 22,
+                                        width: 22,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2.5,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : const Text(
+                                        'متابعة',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          height: 1.2,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
-                const SizedBox(height: 24),
               ],
             ),
           ),
@@ -139,13 +201,21 @@ class _LargeInputField extends StatelessWidget {
     return TextField(
       controller: controller,
       onChanged: (_) => onChanged(),
+      textDirection: TextDirection.rtl,
       decoration: InputDecoration(
         labelText: label,
-        prefixIcon: Icon(icon),
+        prefixIcon: Icon(
+          icon,
+          color: AppTheme.primary, // ✅ لون المشروع
+        ),
+        filled: true,
+        fillColor: Colors.white,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide.none,
         ),
       ),
     );
   }
 }
+

@@ -1,5 +1,5 @@
 class TestSession {
-  // خانات العلامات المنفصلة
+  // ================= العلامات =================
   static int clockScore = 0;
   static int cubeScore = 0;
   static int trailsScore = 0;
@@ -17,10 +17,23 @@ class TestSession {
 
   static bool educationBelow12Years = false;
 
-  // دوال تجميع الأقسام لـ MocaResult
-  static int get finalVisuospatial => clockScore + cubeScore + trailsScore;
+  // ================= Progress (إضافة) =================
+  static int currentQuestion = 1;
+  static const int totalQuestions = 12;
+
+  static void nextQuestion() {
+    if (currentQuestion < totalQuestions) {
+      currentQuestion++;
+    }
+  }
+
+  // ================= تجميع =================
+  static int get finalVisuospatial =>
+      clockScore + cubeScore + trailsScore;
+
   static int get finalAttention =>
       forwardScore + backwardScore + letterAScore + subtractionScore;
+
   static int get finalLanguage =>
       sentence1Score + sentence2Score + fluencyScore;
 
@@ -29,5 +42,8 @@ class TestSession {
     backwardScore = subtractionScore = sentence1Score = sentence2Score = 0;
     fluencyScore = abstractionScore = memoryScore = orientationScore = 0;
     letterAScore = 1;
+
+    // 🔹 Reset progress
+    currentQuestion = 1;
   }
 }

@@ -1,10 +1,12 @@
 import 'dart:io';
 import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:audioplayers/audioplayers.dart';
+
 import 'package:ihsana/test/widgets/test_question_scaffold.dart';
-import 'package:ihsana/utils/hardware_capture_service.dart'; // ✅ سيرفس الهاردوير
+import 'package:ihsana/utils/hardware_capture_service.dart';
 
 import '../../utils/moca_api_service.dart';
 import '../../utils/test_session.dart';
@@ -42,38 +44,35 @@ class _ClockDrawingScreenState extends State<ClockDrawingScreen> {
 
   Future<void> _playInstruction() async {
     try {
-      await _instructionPlayer.play(AssetSource('audio/clock.mp3'));
-    } catch (e) {
-      debugPrint("Error playing audio: $e");
-    }
+      await _instructionPlayer.play(
+        AssetSource('audio/clock.mp3'),
+      );
+    } catch (_) {}
   }
 
   // ================= 📱 MOBILE CAMERA =================
   Future<void> _captureImageMobile() async {
-    // تصفير الصورة القديمة فوراً لكسر الكاش
     setState(() {
       _imageBytes = null;
       _imagePath = null;
     });
 
     final XFile? image = await _picker.pickImage(
-      source: ImageSource.camera, 
-      imageQuality: 85
+      source: ImageSource.camera,
+      imageQuality: 85,
     );
 
     if (image == null) return;
 
     final bytes = await File(image.path).readAsBytes();
 
-    // طرد الصورة القديمة من ذاكرة فلاتر
-    await PaintingBinding.instance.imageCache.evict(FileImage(File(image.path)));
+    await PaintingBinding.instance.imageCache
+        .evict(FileImage(File(image.path)));
 
     setState(() {
       _imagePath = image.path;
       _imageBytes = bytes;
     });
-    
-    debugPrint('📷 Mobile Clock image captured: ${image.path}');
   }
 
   // ================= 🖥️ HARDWARE CAMERA =================
@@ -85,29 +84,28 @@ class _ClockDrawingScreenState extends State<ClockDrawingScreen> {
     });
 
     try {
-      // طلب الصورة من الرايزبري باي
       final imagePath = await HardwareCaptureService.captureImage();
       final bytes = await File(imagePath).readAsBytes();
 
-      // تنظيف كاش الصور إجبارياً
-       PaintingBinding.instance.imageCache.clear();
-       PaintingBinding.instance.imageCache.clearLiveImages();
+      PaintingBinding.instance.imageCache.clear();
+      PaintingBinding.instance.imageCache.clearLiveImages();
 
       setState(() {
         _imagePath = imagePath;
         _imageBytes = bytes;
       });
-
-      debugPrint('📷 Hardware Clock image captured: $imagePath');
-    } catch (e) {
-      debugPrint('❌ Hardware capture error: $e');
+    } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('خطأ في التقاط الصورة من الجهاز الخارجي')),
+          const SnackBar(
+            content: Text('خطأ في التقاط الصورة من الجهاز الخارجي'),
+          ),
         );
       }
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -118,35 +116,35 @@ class _ClockDrawingScreenState extends State<ClockDrawingScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // إرسال الصورة لـ API الساعة (Hugging Face)
-      final result = await _apiService.checkVision(_imagePath!, 'clock');
+      final result = await _apiService.checkVision(
+        _imagePath!,
+        'clock',
+      );
 
       final score = result['score'] ?? 0;
-      // ✅ حفظ النتيجة في الخزنة (من 3 نقاط)
       TestSession.clockScore = score;
 
-      // 🧪 طباعة النتيجة للفحص
-      debugPrint('====================================');
-      debugPrint('🕒 CLOCK SCORE: $score / 3');
-      debugPrint('📊 Analysis: ${result['analysis']}');
-      debugPrint('====================================');
-
       if (mounted) {
-        // الانتقال للقسم التالي (الأسد)
+        TestSession.nextQuestion();
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => const NamingLionScreen()),
+          MaterialPageRoute(
+            builder: (_) => const NamingLionScreen(),
+          ),
         );
       }
-    } catch (e) {
-      debugPrint('❌ Clock Analyze error:$e');
+    } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('خطأ أثناء تحليل صورة الساعة')),
+          const SnackBar(
+            content: Text('خطأ أثناء تحليل صورة الساعة'),
+          ),
         );
       }
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -154,70 +152,95 @@ class _ClockDrawingScreenState extends State<ClockDrawingScreen> {
   Widget build(BuildContext context) {
     final bool isMobile = SessionContext.testMode == TestMode.mobile;
 
-    return Stack(
-      children: [
-        TestQuestionScaffold(
-          title: 'رسم الساعة',
-          instruction: isMobile
-              ? 'ارسم ساعة كاملة بالأرقام والعقارب (11:10) ثم صورها بالجوال.'
-              : 'ارسم الساعة على الورقة أمام الجهاز الخارجي ثم اضغط التقاط.',
-          content: Column(
-            children: [
-              const SizedBox(height: 10),
-              
-              // زر الالتقاط (يتغير حسب المود)
-              ElevatedButton.icon(
-                icon: const Icon(Icons.camera_alt),
-                label: Text(isMobile ? 'التقاط بالجوال' : 'التقاط من الجهاز'),
-                onPressed: _isLoading
-                    ? null
-                    : (isMobile ? _captureImageMobile : _captureImageHardware),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+    return TestQuestionScaffold(
+      title: 'رسم الساعة',
+      instruction: isMobile
+          ? 'ارسم ساعة كاملة بالأرقام والعقارب (11:10) ثم صورها بالجوال.'
+          : 'ارسم الساعة على الورقة أمام الجهاز الخارجي ثم اضغط التقاط.',
+      content: Column(
+        children: [
+          const SizedBox(height: 10),
+
+          // ===== زر الالتقاط / إعادة الالتقاط =====
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              icon: Icon(
+                _imageBytes == null ? Icons.camera_alt : Icons.refresh,
+              ),
+              label: Text(
+                _imageBytes == null
+                    ? (isMobile ? 'التقاط بالجوال' : 'التقاط من الجهاز')
+                    : 'إعادة التقاط الصورة',
+                textAlign: TextAlign.center,
+              ),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(
+                  vertical: 14,
+                  horizontal: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
                 ),
               ),
-
-              const SizedBox(height: 24),
-
-              // 🖼️ منطقة المعاينة (Preview) مع حل مشكلة الكاش
-              Container(
-                width: 280,
-                height: 280,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.grey.shade300, width: 2),
-                ),
-                child: _isLoading
-                    ? const Center(child: CircularProgressIndicator())
-                    : (_imageBytes != null
-                        ? ClipRRect(
-                            borderRadius: BorderRadius.circular(14),
-                            child: Image.memory(
-                              _imageBytes!,
-                              key: UniqueKey(), // 🔥 يضمن تحديث الصورة فوراً عند إعادة الالتقاط
-                              fit: BoxFit.contain,
-                            ),
-                          )
-                        : const Center(
-                            child: Text('بانتظار التقاط الصورة...', 
-                              style: TextStyle(color: Colors.grey)),
-                          )),
-              ),
-              
-              if (_imageBytes != null && !_isLoading)
-                const Padding(
-                  padding: EdgeInsets.only(top: 12),
-                  child: Text("✅ تم التقاط الصورة بنجاح", 
-                    style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
-                ),
-            ],
+              onPressed: _isLoading
+                  ? null
+                  : (isMobile
+                      ? _captureImageMobile
+                      : _captureImageHardware),
+            ),
           ),
-          isNextEnabled: _imageBytes != null && !_isLoading,
-          onNext: _submitAndAnalyze,
-          onEndSession: () => Navigator.popUntil(context, (r) => r.isFirst),
-        ),
-      ],
+
+          const SizedBox(height: 24),
+
+          // ===== معاينة الصورة =====
+          Container(
+            width: 280,
+            height: 280,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: Colors.grey.shade300,
+                width: 2,
+              ),
+            ),
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : (_imageBytes != null
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: Image.memory(
+                          _imageBytes!,
+                          key: UniqueKey(),
+                          fit: BoxFit.contain,
+                        ),
+                      )
+                    : const Center(
+                        child: Text(
+                          'بانتظار التقاط الصورة...',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      )),
+          ),
+
+          // ===== رسالة نجاح =====
+          if (_imageBytes != null && !_isLoading)
+            const Padding(
+              padding: EdgeInsets.only(top: 12),
+              child: Text(
+                '✅ تم التقاط الصورة بنجاح',
+                style: TextStyle(
+                  color: Colors.green,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+        ],
+      ),
+      isNextEnabled: _imageBytes != null && !_isLoading,
+      onNext: _submitAndAnalyze,
+      onEndSession: () => Navigator.popUntil(context, (r) => r.isFirst),
     );
   }
 }

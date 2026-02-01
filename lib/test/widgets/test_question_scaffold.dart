@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_background.dart';
+import '../../utils/test_session.dart';
 
 class TestQuestionScaffold extends StatelessWidget {
   final String title;
@@ -23,48 +24,135 @@ class TestQuestionScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.transparent,
+
+      // ================= Bottom Area =================
+      bottomNavigationBar: Container(
+        padding: EdgeInsets.fromLTRB(
+          20,
+          12,
+          20,
+          12 + MediaQuery.of(context).viewPadding.bottom,
+        ),
+        color: AppTheme.background,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // ===== الزر (بدون ارتفاع ثابت) =====
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: isNextEnabled ? onNext : null,
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 14,
+                    horizontal: 12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                child: const Text(
+                  'إنهاء وتحليل',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    height: 1.4, // يسمح للنص يتمدد
+                  ),
+                ),
+              ),
+            ),
+
+            // ===== الهنت تحت الزر =====
+            if (!isNextEnabled)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  'يرجى إكمال الخطوة الحالية للمتابعة',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: Colors.grey),
+                ),
+              ),
+          ],
+        ),
+      ),
+
+      // ================= Body =================
       body: AppBackground(
         child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Column(
-              children: [
-                // 🔹 Header
-                Row(
+          bottom: false,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Column(
                   children: [
-                    Expanded(
-                      child: Text(
-                        title,
-                        style: Theme.of(context)
-                            .textTheme
-                            .headlineMedium,
-                      ),
+                    const SizedBox(height: 8),
+
+                    Text(
+                      title,
+                      style: Theme.of(context)
+                          .textTheme
+                          .headlineSmall
+                          ?.copyWith(fontWeight: FontWeight.w600),
+                      textAlign: TextAlign.center,
                     ),
-                    TextButton(
-                      onPressed: () {
-                        _confirmEndSession(context);
-                      },
-                      child: const Text(
+
+                    const SizedBox(height: 4),
+                    Text(
+                      'سؤال ${TestSession.currentQuestion} / ${TestSession.totalQuestions}',
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: Colors.grey),
+                    ),
+
+                    TextButton.icon(
+                      onPressed: () => _showEndSessionDialog(context),
+                      icon: const Icon(
+                        Icons.warning_amber_rounded,
+                        size: 18,
+                        color: Colors.red,
+                      ),
+                      label: const Text(
                         'إنهاء الجلسة',
-                        style: TextStyle(color: Colors.red),
+                        style: TextStyle(
+                          color: Colors.red,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
+
+                    if (instruction != null)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primary.withOpacity(0.06),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          instruction!,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            height: 1.5,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
                   ],
                 ),
+              ),
 
-                if (instruction != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    instruction!,
-                    style:
-                        Theme.of(context).textTheme.bodyMedium,
-                  ),
-                ],
+              const SizedBox(height: 12),
 
-                const SizedBox(height: 16),
-
-                // 🔹 Content Area
-                Expanded(
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(16),
@@ -72,34 +160,21 @@ class TestQuestionScaffold extends StatelessWidget {
                     child: content,
                   ),
                 ),
-
-                const SizedBox(height: 16),
-
-                // 🔹 Footer Buttons
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: isNextEnabled ? onNext : null,
-                    child: const Text('متابعة'),
-                  ),
-                ),
-
-                const SizedBox(height: 12),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  void _confirmEndSession(BuildContext context) {
+  void _showEndSessionDialog(BuildContext context) {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('إنهاء الجلسة'),
         content: const Text(
-          'هل أنت متأكد أنك تريد إنهاء الاختبار؟',
+          'هل أنت متأكد أنك تريد إنهاء الجلسة؟ سيتم فقدان التقدم الحالي.',
         ),
         actions: [
           TextButton(
@@ -108,7 +183,7 @@ class TestQuestionScaffold extends StatelessWidget {
           ),
           TextButton(
             onPressed: () {
-              Navigator.pop(context); // close dialog
+              Navigator.pop(context);
               onEndSession();
             },
             child: const Text(
