@@ -1,15 +1,16 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_sound/flutter_sound.dart';
+import 'package:ihsana/test/memory/memory_intro_screen.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
+import 'package:audioplayers/audioplayers.dart';
 
 import 'package:ihsana/test/widgets/test_question_scaffold.dart';
-import '../../utils/moca_api_service.dart';
 import '../../utils/test_session.dart';
+import '../../utils/moca_api_service.dart';
 import '../../session/session_context.dart';
 import '../test_mode_selection_screen.dart';
-import '../memory/memory_encoding_screen.dart';
 
 class NamingCamelScreen extends StatefulWidget {
   final String lionPath;
@@ -28,10 +29,13 @@ class NamingCamelScreen extends StatefulWidget {
 class _NamingCamelScreenState extends State<NamingCamelScreen> {
   FlutterSoundRecorder? _recorder;
   final MocaApiService _apiService = MocaApiService();
+  final AudioPlayer _instructionPlayer = AudioPlayer(); // 🔊 مشغل التعليمات
+  final AudioPlayer _actionAudioPlayer = AudioPlayer();
 
   bool _isRecording = false;
   bool _isLoading = false;
   String? _camelPath;
+  bool _isInstructionPlaying = false; // 🛡️ حالة التشغيل
 
   @override
   void initState() {
@@ -39,16 +43,44 @@ class _NamingCamelScreenState extends State<NamingCamelScreen> {
     if (SessionContext.testMode == TestMode.mobile) {
       _recorder = FlutterSoundRecorder()..openRecorder();
     }
+
+    // 🔊 مراقبة انتهاء الصوت لإعادة إظهار زر الإعادة
+    _instructionPlayer.onPlayerComplete.listen((event) {
+      if (mounted) {
+        setState(() => _isInstructionPlaying = false);
+      }
+    });
+
+    _playInstruction();
   }
 
   @override
   void dispose() {
     _recorder?.closeRecorder();
+    _instructionPlayer.dispose();
+    _actionAudioPlayer.dispose();
     super.dispose();
   }
 
-  // ================= 🎛 RECORD BUTTON =================
+  Future<void> _playInstruction() async {
+    try {
+      if (mounted) setState(() => _isInstructionPlaying = true);
+      await _instructionPlayer.stop();
+      await _instructionPlayer.play(
+        AssetSource('audio/naming.mp3'),
+      );
+    } catch (_) {
+      if (mounted) setState(() => _isInstructionPlaying = false);
+    }
+  }
+
   Future<void> _onRecordPressed() async {
+    // إيقاف التعليمات فوراً عند بدء التسجيل
+    if (_isInstructionPlaying) {
+      await _instructionPlayer.stop();
+      setState(() => _isInstructionPlaying = false);
+    }
+
     if (SessionContext.testMode == TestMode.hardware) {
       if (_isRecording) {
         await _stopHardwareRecording();
@@ -60,7 +92,7 @@ class _NamingCamelScreenState extends State<NamingCamelScreen> {
     }
   }
 
-  // ================= 📱 MOBILE =================
+  // ================= 📱 MOBILE RECORDING =================
   Future<void> _recordFromMobile() async {
     if (_isRecording) {
       final path = await _recorder!.stopRecorder();
@@ -83,7 +115,7 @@ class _NamingCamelScreenState extends State<NamingCamelScreen> {
     }
   }
 
-  // ================= 🖥️ HARDWARE =================
+  // ================= 🖥️ HARDWARE RECORDING =================
   Future<void> _startHardwareRecording() async {
     setState(() {
       _isRecording = true;
@@ -116,21 +148,15 @@ class _NamingCamelScreenState extends State<NamingCamelScreen> {
           _camelPath = file.path;
           _isRecording = false;
         });
-      } else {
-        throw Exception('Hardware error');
       }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('خطأ في تسجيل الجهاز الخارجي')),
-      );
-      setState(() => _isRecording = false);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  // ================= 🚀 SUBMIT =================
+  // ================= 🚀 ANALYZE =================
   Future<void> _submitAndAnalyze() async {
+    _instructionPlayer.stop(); // إيقاف أي صوت قبل الانتقال
     setState(() => _isLoading = true);
 
     try {
@@ -143,27 +169,11 @@ class _NamingCamelScreenState extends State<NamingCamelScreen> {
       TestSession.namingScore = result['score'] ?? 0;
 
       if (!mounted) return;
-
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => AlertDialog(
-          title: const Text('اكتمل قسم التسمية'),
-          content: Text('السكور: ${result['score']} / 3'),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const MemoryEncodingScreen(),
-                  ),
-                );
-              },
-              child: const Text('متابعة'),
-            ),
-          ],
+      TestSession.nextQuestion();
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const MemoryIntroScreen(),
         ),
       );
     } finally {
@@ -171,55 +181,139 @@ class _NamingCamelScreenState extends State<NamingCamelScreen> {
     }
   }
 
-  // ================= UI =================
+  // ===== أصوات زر التسجيل =====
+  Future<void> _playActionVoice(String asset) async {
+    try {
+      await _actionAudioPlayer.stop();
+      await _actionAudioPlayer.play(AssetSource(asset));
+    } catch (_) {}
+  }
+
+  Future<void> _stopActionVoice() async {
+    try {
+      await _actionAudioPlayer.stop();
+    } catch (_) {}
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        TestQuestionScaffold(
-          title: 'آخر حيوان',
-          content: Column(
-            children: [
-              Image.asset('assets/images/camel.png', height: 200),
-              const SizedBox(height: 24),
+    return TestQuestionScaffold(
+      title: 'آخر حيوان',
+      // 🛡️ زر إعادة الاستماع يظهر فقط إذا لم يكن هناك صوت يعمل حالياً ولم نكن في وضع التسجيل
+      onRepeatInstruction: (_isInstructionPlaying || _isRecording) 
+          ? null 
+          : _playInstruction,
+      content: Column(
+        children: [
+          Image.asset(
+            'assets/images/camel.png',
+            height: 300, 
+            fit: BoxFit.contain,
+          ),
+          const SizedBox(height: 24),
 
-              ElevatedButton.icon(
+          // ===== زر التسجيل (مع صوت) =====
+          GestureDetector(
+            onTapDown: (_) {
+              if (_isRecording) {
+                _playActionVoice('audio/stop_recording.mp3');
+              } else if (_camelPath != null) {
+                _playActionVoice('audio/retry_recording.mp3');
+              } else {
+                _playActionVoice('audio/start_recording.mp3');
+              }
+            },
+            onTapUp: (_) => _stopActionVoice(),
+            onTapCancel: _stopActionVoice,
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
                 onPressed: _isLoading ? null : _onRecordPressed,
                 icon: Icon(
                   _isRecording ? Icons.stop : Icons.mic,
                 ),
                 label: Text(
-                  _isRecording ? 'إيقاف التسجيل' : 'تسجيل الإجابة',
+                  _isRecording
+                      ? 'إيقاف التسجيل'
+                      : (_camelPath != null
+                          ? 'إعادة التسجيل'
+                          : 'تسجيل الإجابة'),
                 ),
                 style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 14,
+                    horizontal: 16,
+                  ),
                   backgroundColor: _isRecording ? Colors.red : null,
                   foregroundColor: _isRecording ? Colors.white : null,
-                ),
-              ),
-
-              if (_camelPath != null && !_isRecording)
-                const Padding(
-                  padding: EdgeInsets.only(top: 12),
-                  child: Text(
-                    '✅ تم تسجيل الجمل بنجاح',
-                    style: TextStyle(color: Colors.green),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
                   ),
                 ),
-            ],
+              ),
+            ),
           ),
-          isNextEnabled:
-              _camelPath != null && !_isRecording && !_isLoading,
-          onNext: _submitAndAnalyze,
-          onEndSession: () =>
-              Navigator.popUntil(context, (route) => route.isFirst),
-        ),
 
-        if (_isLoading)
-          Container(
-            color: Colors.black45,
-            child: const Center(child: CircularProgressIndicator()),
-          ),
-      ],
+          // ===== حالة جاري التسجيل =====
+          if (_isRecording)
+            Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: Column(
+                children: const [
+                  Icon(
+                    Icons.fiber_manual_record,
+                    color: Colors.red,
+                    size: 28,
+                  ),
+                  SizedBox(height: 6),
+                  Text(
+                    'جاري التسجيل...',
+                    style: TextStyle(color: Colors.red),
+                  ),
+                ],
+              ),
+            ),
+
+          // ===== رسالة نجاح التسجيل =====
+          if (_camelPath != null && !_isRecording) ...[
+            const SizedBox(height: 24),
+            Container(
+              width: double.infinity,
+              padding:
+                  const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+              decoration: BoxDecoration(
+                color: Colors.green.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Colors.green.withOpacity(0.4),
+                ),
+              ),
+              child: Row(
+                children: const [
+                  Icon(Icons.check_circle, color: Colors.green),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'تم تسجيل الإجابة بنجاح',
+                      style: TextStyle(
+                        color: Colors.green,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+      isNextEnabled:
+          _camelPath != null && !_isRecording && !_isLoading,
+      onNext: _submitAndAnalyze,
+      onEndSession: () {
+        _instructionPlayer.stop();
+        Navigator.popUntil(context, (route) => route.isFirst);
+      },
     );
   }
 }

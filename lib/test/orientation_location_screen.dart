@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:audioplayers/audioplayers.dart';
 
 import '../theme/app_theme.dart';
 import '../widgets/app_background.dart';
@@ -19,11 +20,43 @@ class _OrientationLocationScreenState
     extends State<OrientationLocationScreen> {
   final _cityController = TextEditingController();
   final _placeController = TextEditingController();
+  final AudioPlayer _audioPlayer = AudioPlayer();
+
   bool _loading = false;
 
   bool get _canContinue =>
       _cityController.text.isNotEmpty &&
       _placeController.text.isNotEmpty;
+
+  @override
+  void initState() {
+    super.initState();
+    _playOrientationVoice();
+  }
+
+  Future<void> _playOrientationVoice() async {
+    try {
+      await _audioPlayer.play(
+        AssetSource('audio/orientation_location.mp3'),
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _playCityVoice() async {
+    try {
+      await _audioPlayer.play(
+        AssetSource('audio/city.mp3'),
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _playPlaceVoice() async {
+    try {
+      await _audioPlayer.play(
+        AssetSource('audio/place.mp3'),
+      );
+    } catch (_) {}
+  }
 
   Future<void> _saveLocation() async {
     setState(() => _loading = true);
@@ -58,6 +91,12 @@ class _OrientationLocationScreenState
     } finally {
       setState(() => _loading = false);
     }
+  }
+
+  @override
+  void dispose() {
+    _audioPlayer.dispose();
+    super.dispose();
   }
 
   @override
@@ -104,7 +143,7 @@ class _OrientationLocationScreenState
                   child: Center(
                     child: SingleChildScrollView(
                       child: Container(
-                        padding: const EdgeInsets.all(24),
+                        padding: const EdgeInsets.all(28),
                         decoration: AppTheme.cardDecoration,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -113,44 +152,48 @@ class _OrientationLocationScreenState
                               'أين أنت الآن؟',
                               style: Theme.of(context)
                                   .textTheme
-                                  .headlineMedium,
+                                  .headlineMedium
+                                  ?.copyWith(
+                                    fontSize: 26,
+                                    fontWeight: FontWeight.w700,
+                                  ),
                               textAlign: TextAlign.center,
                             ),
 
-                            const SizedBox(height: 24),
+                            const SizedBox(height: 32),
 
                             _LargeInputField(
                               controller: _cityController,
                               label: 'المدينة',
                               icon: Icons.location_city,
+                              onTap: _playCityVoice,
                               onChanged: () => setState(() {}),
                             ),
-                            const SizedBox(height: 20),
+
+                            const SizedBox(height: 24),
 
                             _LargeInputField(
                               controller: _placeController,
                               label: 'المكان',
                               icon: Icons.place,
+                              onTap: _playPlaceVoice,
                               onChanged: () => setState(() {}),
                             ),
 
-                            const SizedBox(height: 32),
+                            const SizedBox(height: 36),
 
-                            // ===== زر المتابعة (مصحّح) =====
+                            // ===== زر المتابعة =====
                             SizedBox(
                               width: double.infinity,
-                              height: 56,
+                              height: 60,
                               child: ElevatedButton(
                                 onPressed: !_canContinue || _loading
                                     ? null
                                     : _saveLocation,
-                                style: ElevatedButton.styleFrom(
-                                  alignment: Alignment.center,
-                                ),
                                 child: _loading
                                     ? const SizedBox(
-                                        height: 22,
-                                        width: 22,
+                                        height: 24,
+                                        width: 24,
                                         child: CircularProgressIndicator(
                                           strokeWidth: 2.5,
                                           color: Colors.white,
@@ -159,8 +202,7 @@ class _OrientationLocationScreenState
                                     : const Text(
                                         'متابعة',
                                         style: TextStyle(
-                                          fontSize: 16,
-                                          height: 1.2,
+                                          fontSize: 18,
                                           fontWeight: FontWeight.w600,
                                         ),
                                       ),
@@ -188,12 +230,14 @@ class _LargeInputField extends StatelessWidget {
   final String label;
   final IconData icon;
   final VoidCallback onChanged;
+  final VoidCallback onTap;
 
   const _LargeInputField({
     required this.controller,
     required this.label,
     required this.icon,
     required this.onChanged,
+    required this.onTap,
   });
 
   @override
@@ -201,21 +245,29 @@ class _LargeInputField extends StatelessWidget {
     return TextField(
       controller: controller,
       onChanged: (_) => onChanged(),
+      onTap: onTap,
       textDirection: TextDirection.rtl,
+      style: const TextStyle(
+        fontSize: 18,
+        height: 1.4,
+      ),
       decoration: InputDecoration(
         labelText: label,
+        labelStyle: const TextStyle(fontSize: 16),
         prefixIcon: Icon(
           icon,
-          color: AppTheme.primary, // ✅ لون المشروع
+          color: AppTheme.primary,
+          size: 28,
         ),
         filled: true,
         fillColor: Colors.white,
+        contentPadding:
+            const EdgeInsets.symmetric(vertical: 18, horizontal: 16),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(18),
           borderSide: BorderSide.none,
         ),
       ),
     );
   }
 }
-

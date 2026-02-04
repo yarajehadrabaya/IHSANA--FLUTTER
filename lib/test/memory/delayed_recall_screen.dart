@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:ihsana/test/orientation/orientation_intro_screen.dart';
 import 'package:ihsana/test/widgets/test_question_scaffold.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter_sound/flutter_sound.dart';
@@ -11,7 +12,6 @@ import '../../utils/moca_api_service.dart';
 import '../../utils/test_session.dart';
 import '../../session/session_context.dart';
 import '../test_mode_selection_screen.dart';
-import '../orientation/orientation_screen.dart';
 
 class DelayedRecallScreen extends StatefulWidget {
   const DelayedRecallScreen({super.key});
@@ -22,6 +22,7 @@ class DelayedRecallScreen extends StatefulWidget {
 
 class _DelayedRecallScreenState extends State<DelayedRecallScreen> {
   final AudioPlayer _instructionPlayer = AudioPlayer();
+  final AudioPlayer _btnSfxPlayer = AudioPlayer(); // 🆕 مشغل أصوات الأزرار الناطقة
   FlutterSoundRecorder? _recorder;
   final MocaApiService _apiService = MocaApiService();
 
@@ -30,6 +31,7 @@ class _DelayedRecallScreenState extends State<DelayedRecallScreen> {
   bool _hasRecorded = false;
   bool _isLoading = false;
   bool _hwRecording = false;
+  bool _audioFinished = false; // 🆕 لمتابعة انتهاء الصوت للسكافولد
 
   String? _audioPath;
 
@@ -41,12 +43,37 @@ class _DelayedRecallScreenState extends State<DelayedRecallScreen> {
       _recorder = FlutterSoundRecorder()..openRecorder();
     }
 
+    // 🆕 تحميل الملفات مسبقاً في الذاكرة لضمان التشغيل الفوري عند الضغط
+    _preloadSfx();
+
+    // 🆕 ربط المستمع لتحديث حالة السكافولد
+    _instructionPlayer.onPlayerComplete.listen((_) {
+      if (mounted) {
+        setState(() {
+          _isPlaying = false;
+          _audioFinished = true;
+        });
+      }
+    });
+
     _playInstruction();
+  }
+
+  // 🆕 دالة تحميل الأصوات مسبقاً (تستخدم الأسماء الفعلية للملفات المرفوعة)
+  Future<void> _preloadSfx() async {
+    try {
+      await _btnSfxPlayer.setSource(AssetSource('audio/start_recording.mp3'));
+      await _btnSfxPlayer.setSource(AssetSource('audio/stop_recording.mp3'));
+      await _btnSfxPlayer.setSource(AssetSource('audio/retry_recording.mp3'));
+    } catch (e) {
+      debugPrint('Error preloading sfx: $e');
+    }
   }
 
   @override
   void dispose() {
     _instructionPlayer.dispose();
+    _btnSfxPlayer.dispose(); // 🆕
     _recorder?.closeRecorder();
     super.dispose();
   }
@@ -54,13 +81,14 @@ class _DelayedRecallScreenState extends State<DelayedRecallScreen> {
   // ================= 🔊 INSTRUCTION =================
   Future<void> _playInstruction() async {
     try {
-      setState(() => _isPlaying = true);
+      setState(() {
+        _isPlaying = true;
+        _audioFinished = false;
+      });
+      await _instructionPlayer.stop(); // تأمين التوقف قبل البدء
       await _instructionPlayer.play(
         AssetSource('audio/memory.mp3'),
       );
-      _instructionPlayer.onPlayerComplete.listen((_) {
-        if (mounted) setState(() => _isPlaying = false);
-      });
     } catch (e) {
       debugPrint('❌ Instruction error: $e');
       setState(() => _isPlaying = false);
@@ -104,25 +132,19 @@ class _DelayedRecallScreenState extends State<DelayedRecallScreen> {
     }
   }
 
-  // ================= 🖥️ HARDWARE (مثل naming تماماً) =================
+  // ================= 🖥️ HARDWARE =================
   Future<void> _toggleHardwareRecording() async {
     if (_hwRecording) {
       setState(() => _isLoading = true);
 
       try {
-        // 1️⃣ stop
         await http.post(
           Uri.parse('${SessionContext.raspberryBaseUrl}/stop-recording'),
         );
 
-        // 2️⃣ get audio
         final res = await http.get(
           Uri.parse('${SessionContext.raspberryBaseUrl}/get-audio'),
         );
-
-        if (res.statusCode != 200) {
-          throw Exception('GET audio failed');
-        }
 
         final dir = await getTemporaryDirectory();
         final file = File('${dir.path}/memory_hw.wav');
@@ -133,20 +155,11 @@ class _DelayedRecallScreenState extends State<DelayedRecallScreen> {
           _hasRecorded = true;
           _hwRecording = false;
         });
-
-        debugPrint('✅ MEMORY HW SAVED: ${file.path}');
-      } catch (e) {
-        debugPrint('❌ MEMORY HW ERROR: $e');
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('خطأ في تسجيل الجهاز الخارجي')),
-        );
-        _hwRecording = false;
       } finally {
         if (mounted) setState(() => _isLoading = false);
       }
     } else {
       await _instructionPlayer.stop();
-
       await http.post(
         Uri.parse('${SessionContext.raspberryBaseUrl}/start-recording'),
       );
@@ -155,8 +168,6 @@ class _DelayedRecallScreenState extends State<DelayedRecallScreen> {
         _hwRecording = true;
         _hasRecorded = false;
       });
-
-      debugPrint('🎙️ MEMORY HW START');
     }
   }
 
@@ -168,25 +179,13 @@ class _DelayedRecallScreenState extends State<DelayedRecallScreen> {
 
     try {
       final res = await _apiService.checkMemory(_audioPath!);
-      final score = res['score'] ?? 0;
-
-      TestSession.memoryScore = score;
-
-      debugPrint('🧠 MEMORY SCORE: $score');
-      debugPrint('FULL RESPONSE: $res');
-
-      if (!mounted) return;
+      TestSession.memoryScore = res['score'] ?? 0;
 
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => const OrientationScreen(),
+          builder: (_) => const OrientationIntroScreen(),
         ),
-      );
-    } catch (e) {
-      debugPrint('❌ MEMORY SUBMIT ERROR: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('خطأ في التحليل')),
       );
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -198,6 +197,16 @@ class _DelayedRecallScreenState extends State<DelayedRecallScreen> {
   Widget build(BuildContext context) {
     final bool isHardware = SessionContext.testMode == TestMode.hardware;
 
+    // 🆕 منطق الصوت الناطق (البدء / الإيقاف / إعادة التسجيل) مع مطابقة اسم الملف المرفوع
+    String recordingSfx;
+    if (_isRecording || _hwRecording) {
+      recordingSfx = 'audio/stop_recording.mp3';
+    } else if (_hasRecorded) {
+      recordingSfx = 'audio/retry_recording.mp3'; // تم التعديل ليطابق الملف المرفوع
+    } else {
+      recordingSfx = 'audio/start_recording.mp3';
+    }
+
     return Stack(
       children: [
         TestQuestionScaffold(
@@ -205,51 +214,128 @@ class _DelayedRecallScreenState extends State<DelayedRecallScreen> {
           instruction: isHardware
               ? 'اذكر الكلمات الخمس في ميكروفون الجهاز الخارجي.'
               : 'اذكر الكلمات الخمس التي سمعتها في بداية الاختبار.',
+          // 🆕 زر إعادة الاستماع يظهر عند انتهاء الصوت وعدم وجود تسجيل
+          onRepeatInstruction: (_audioFinished && !_isRecording && !_hwRecording)
+              ? _playInstruction
+              : null,
           content: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.psychology_alt, size: 90, color: Colors.purple),
-              const SizedBox(height: 30),
-
-              if (!_isRecording && !_isLoading)
-                TextButton.icon(
-                  onPressed: _isPlaying ? null : _playInstruction,
-                  icon: const Icon(Icons.replay),
-                  label: const Text('إعادة سماع التعليمات'),
+              // ===== CARD =====
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.06),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
                 ),
+                child: Column(
+                  children: [
+                    const Icon(
+                      Icons.psychology_alt,
+                      size: 110,
+                      color: Color.fromARGB(255, 100, 138, 226),
+                    ),
 
-              const SizedBox(height: 20),
+                    const SizedBox(height: 20),
 
-              ElevatedButton.icon(
-                onPressed: _isLoading ? null : _onRecordPressed,
-                icon: Icon(
-                  isHardware
-                      ? Icons.settings_remote
-                      : (_isRecording ? Icons.stop : Icons.mic),
-                ),
-                label: Text(
-                  isHardware
-                      ? (_hwRecording ? 'إيقاف التسجيل' : 'بدء التسجيل')
-                      : (_isRecording ? 'إيقاف التسجيل' : 'بدء تسجيل الإجابة'),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor:
-                      _isRecording || _hwRecording ? Colors.red : null,
-                  foregroundColor:
-                      _isRecording || _hwRecording ? Colors.white : null,
+                 
+
+                    // ===== زر التسجيل =====
+                    SizedBox(
+                      width: double.infinity,
+                      child: GestureDetector(
+                        // 🆕 حل مشكلة الصوت: استخدام Low Latency للتشغيل الفوري
+                        onLongPressStart: (_) {
+                          if (_audioFinished && !_isLoading) {
+                            _btnSfxPlayer.play(AssetSource(recordingSfx), mode: PlayerMode.lowLatency);
+                          }
+                        },
+                        onLongPressEnd: (_) => _btnSfxPlayer.stop(),
+                        child: ElevatedButton.icon(
+                          // 🆕 معطل أثناء الأوتو ربلاي
+                          onPressed: (_isLoading || _isPlaying) ? null : _onRecordPressed,
+                          icon: Icon(
+                            isHardware
+                                ? Icons.settings_remote
+                                : (_isRecording ? Icons.stop : Icons.mic),
+                          ),
+                          label: Text(
+                            isHardware
+                                ? (_hwRecording
+                                    ? 'إيقاف التسجيل'
+                                    : (_hasRecorded ? 'إعادة التسجيل' : 'بدء التسجيل'))
+                                : (_isRecording
+                                    ? 'إيقاف التسجيل'
+                                    : (_hasRecorded ? 'إعادة تسجيل الإجابة' : 'بدء تسجيل الإجابة')),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            backgroundColor:
+                                _isRecording || _hwRecording
+                                    ? Colors.red
+                                    : null,
+                            foregroundColor:
+                                _isRecording || _hwRecording
+                                    ? Colors.white
+                                    : null,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    // ===== حالة التسجيل =====
+                    if (_isRecording || _hwRecording)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 16),
+                        child: Column(
+                          children: [
+                            Icon(Icons.fiber_manual_record,
+                                color: Colors.red, size: 28),
+                            SizedBox(height: 6),
+                            Text(
+                              'جاري التسجيل...',
+                              style: TextStyle(
+                                color: Colors.red,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                    if (_hasRecorded)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 16),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.check_circle,
+                                color: Colors.green),
+                            SizedBox(width: 8),
+                            Text(
+                              'تم تسجيل الإجابة بنجاح',
+                              style: TextStyle(
+                                color: Colors.green,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
                 ),
               ),
-
-              if (_hasRecorded)
-                const Padding(
-                  padding: EdgeInsets.only(top: 12),
-                  child: Text(
-                    '✅ تم تسجيل الإجابة بنجاح',
-                    style: TextStyle(
-                      color: Colors.green,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
             ],
           ),
           isNextEnabled: _hasRecorded && !_isLoading,
@@ -261,7 +347,9 @@ class _DelayedRecallScreenState extends State<DelayedRecallScreen> {
         if (_isLoading)
           Container(
             color: Colors.black26,
-            child: const Center(child: CircularProgressIndicator()),
+            child: const Center(
+              child: CircularProgressIndicator(),
+            ),
           ),
       ],
     );

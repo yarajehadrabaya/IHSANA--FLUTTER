@@ -21,8 +21,10 @@ class SentenceRepetitionOneScreen extends StatefulWidget {
 }
 
 class _SentenceRepetitionOneScreenState
-    extends State<SentenceRepetitionOneScreen> {
+    extends State<SentenceRepetitionOneScreen>
+    with SingleTickerProviderStateMixin {
   final AudioPlayer _instructionPlayer = AudioPlayer();
+  final AudioPlayer _btnSfxPlayer = AudioPlayer(); // مشغل أصوات الأزرار
   FlutterSoundRecorder? _recorder;
   final MocaApiService _apiService = MocaApiService();
 
@@ -30,7 +32,13 @@ class _SentenceRepetitionOneScreenState
   bool _hasRecorded = false;
   bool _isLoading = false;
   bool _isPlaying = false;
+  bool _audioFinished = false;
+  bool _hasPlayedOnce = false;
+
   String? _audioPath;
+
+  // ===== Controller لنبض السماعة (بدون Animation late) =====
+  late AnimationController _pulseController;
 
   @override
   void initState() {
@@ -40,28 +48,46 @@ class _SentenceRepetitionOneScreenState
       _recorder = FlutterSoundRecorder()..openRecorder();
     }
 
-    _playInstruction();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
   }
 
   @override
   void dispose() {
+    _pulseController.dispose();
     _instructionPlayer.dispose();
+    _btnSfxPlayer.dispose();
     _recorder?.closeRecorder();
     super.dispose();
   }
 
-  // 🔊 تشغيل الجملة
+  // ================= 🔊 تشغيل الجملة (مرة واحدة فقط) =================
   Future<void> _playInstruction() async {
-    setState(() => _isPlaying = true);
+    setState(() {
+      _isPlaying = true;
+      _audioFinished = false;
+      _hasPlayedOnce = true;
+    });
+
+    _pulseController.repeat(reverse: true);
+
     await _instructionPlayer.play(
       AssetSource('audio/sentance1.mp3'),
     );
+
     _instructionPlayer.onPlayerComplete.listen((_) {
-      if (mounted) setState(() => _isPlaying = false);
+      if (!mounted) return;
+      _pulseController.stop();
+      setState(() {
+        _isPlaying = false;
+        _audioFinished = true;
+      });
     });
   }
 
-  // 🎤 زر التسجيل
+  // ================= 🎤 زر التسجيل =================
   Future<void> _onRecordPressed() async {
     if (SessionContext.testMode == TestMode.hardware) {
       await _recordFromHardware();
@@ -105,7 +131,6 @@ class _SentenceRepetitionOneScreenState
     final baseUrl = SessionContext.raspberryBaseUrl;
 
     if (_isRecording) {
-      // ⛔ STOP
       setState(() => _isLoading = true);
       try {
         await http.post(Uri.parse('$baseUrl/stop-recording'));
@@ -128,7 +153,6 @@ class _SentenceRepetitionOneScreenState
         if (mounted) setState(() => _isLoading = false);
       }
     } else {
-      // ▶ START
       await _instructionPlayer.stop();
       await http.post(Uri.parse('$baseUrl/start-recording'));
 
@@ -180,60 +204,163 @@ class _SentenceRepetitionOneScreenState
   Widget build(BuildContext context) {
     final isHardware = SessionContext.testMode == TestMode.hardware;
 
-    return Stack(
-      children: [
-        TestQuestionScaffold(
-          title: 'تكرار الجملة (1/2)',
-          instruction: isHardware
-              ? 'اضغط بدء ثم أنهِ التسجيل من الجهاز الخارجي'
-              : 'استمع للجملة ثم أعدها كما سمعتها',
-          content: Column(
-            children: [
-              ElevatedButton.icon(
-                onPressed: _isPlaying ? null : _playInstruction,
-                icon: const Icon(Icons.volume_up),
-                label: const Text('سماع الجملة'),
-              ),
-              const SizedBox(height: 30),
+    // تحديد صوت زر التسجيل بناءً على الحالة
+    String recordingSfx = _isRecording 
+        ? 'audio/stop_recording.mp3' 
+        : (_hasRecorded ? 'audio/retry_recording.mp3' : 'audio/start_recording.mp3');
 
-              ElevatedButton.icon(
-                onPressed:
-                    (_isPlaying || _isLoading) ? null : _onRecordPressed,
-                icon: Icon(
-                  _isRecording ? Icons.stop : Icons.mic,
+    return TestQuestionScaffold(
+      title: 'تكرار الجملة (1/2)',
+      instruction: isHardware
+          ? 'اضغط على سماع الجملة مرة واحدة، ثم أعد تكرارها صوتيًا'
+          : 'استمع للجملة مرة واحدة، ثم أعدها كما سمعتها',
+      content: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // ===== CARD =====
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.06),
+                  blurRadius: 20,
+                  offset: const Offset(0, 8),
                 ),
-                label: Text(
-                  _isRecording ? 'إيقاف التسجيل' : 'بدء التسجيل',
-                ),
-              ),
-
-              const SizedBox(height: 16),
-
-              if (_hasRecorded && !_isRecording)
-                const Text(
-                  '✅ تم تسجيل الإجابة',
-                  style: TextStyle(
-                    color: Colors.green,
-                    fontWeight: FontWeight.bold,
+              ],
+            ),
+            child: Column(
+              children: [
+                // ===== سماعة تنبض أثناء السماع =====
+                AnimatedBuilder(
+                  animation: _pulseController,
+                  builder: (context, child) {
+                    final scale = _isPlaying
+                        ? (0.95 + (_pulseController.value * 0.15))
+                        : 1.0;
+                    return Transform.scale(scale: scale, child: child);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(22),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _isPlaying
+                          ? Colors.blue.withOpacity(0.15)
+                          : Colors.grey.withOpacity(0.12),
+                    ),
+                    child: Icon(
+                      Icons.volume_up,
+                      size: 64,
+                      color: _isPlaying ? Colors.blue : Colors.grey,
+                    ),
                   ),
                 ),
-            ],
-          ),
-          isNextEnabled:
-              _hasRecorded && !_isRecording && !_isLoading,
-          onNext: _submit,
-          onEndSession: () =>
-              Navigator.popUntil(context, (r) => r.isFirst),
-        ),
 
-        if (_isLoading)
-          Container(
-            color: Colors.black26,
-            child: const Center(
-              child: CircularProgressIndicator(),
+                const SizedBox(height: 24),
+
+                // ===== زر سماع الجملة =====
+                SizedBox(
+                  width: double.infinity,
+                  child: GestureDetector(
+                    onLongPressStart: (_) => _btnSfxPlayer.play(AssetSource('audio/play_Sentence.mp3')),
+                    onLongPressEnd: (_) => _btnSfxPlayer.stop(),
+                    child: ElevatedButton.icon(
+                      onPressed:
+                          (_hasPlayedOnce || _isPlaying || _isRecording)
+                              ? null
+                              : _playInstruction,
+                      icon: const Icon(Icons.volume_up),
+                      label: const Text('سماع الجملة'),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                // ===== زر تسجيل الإجابة (ناطق بالضغط المطول) =====
+               SizedBox(
+  width: double.infinity,
+  child: GestureDetector(
+    onLongPressStart: (_) => _btnSfxPlayer.play(AssetSource(recordingSfx)),
+    onLongPressEnd: (_) => _btnSfxPlayer.stop(),
+    child: ElevatedButton.icon(
+      // الزر يكون معطل إذا كان الصوت يعمل، أو جاري التحميل، أو (الأهم) إذا لم ينتهِ الصوت بعد
+      onPressed: (_isPlaying || _isLoading || !_audioFinished) ? null : _onRecordPressed,
+      icon: Icon(
+        _isRecording ? Icons.stop : Icons.mic,
+      ),
+      label: Text(
+        _isRecording
+            ? 'إيقاف التسجيل'
+            : (_hasRecorded ? 'إعادة التسجيل' : 'بدء التسجيل'),
+      ),
+      style: ElevatedButton.styleFrom(
+        padding: const EdgeInsets.symmetric(
+          vertical: 14,
+          horizontal: 16,
+        ),
+        backgroundColor: _isRecording ? Colors.red : null,
+        foregroundColor: _isRecording ? Colors.white : null,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+        ),
+      ),
+    ),
+  ),
+),
+
+                // ===== جاري التسجيل =====
+                if (_isRecording)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 16),
+                    child: Column(
+                      children: const [
+                        Icon(Icons.fiber_manual_record,
+                            color: Colors.red, size: 28),
+                        SizedBox(height: 6),
+                        Text(
+                          'جاري التسجيل...',
+                          style: TextStyle(
+                            color: Colors.red,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                if (_hasRecorded && !_isRecording)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 16),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.check_circle,
+                            color: Colors.green),
+                        SizedBox(width: 8),
+                        Text(
+                          'تم تسجيل الإجابة بنجاح',
+                          style: TextStyle(
+                            color: Colors.green,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
             ),
           ),
-      ],
+        ],
+      ),
+      isNextEnabled:
+          _hasRecorded && !_isRecording && !_isLoading,
+      onNext: _submit,
+      onEndSession: () =>
+          Navigator.popUntil(context, (r) => r.isFirst),
     );
   }
 }

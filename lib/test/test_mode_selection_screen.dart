@@ -5,9 +5,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_background.dart';
 import '../session/session_context.dart';
+import '../utils/test_session.dart'; // 🔥 مهم
 import 'instructions_screen.dart';
 
-// ✅ الـ Enum موجود لتعريف الخيارات
 enum TestMode { mobile, hardware }
 
 class TestModeSelectionScreen extends StatefulWidget {
@@ -28,6 +28,9 @@ class _TestModeSelectionScreenState extends State<TestModeSelectionScreen> {
     setState(() => _loading = true);
 
     try {
+      // 🔥🔥🔥 الحل النهائي
+      TestSession.reset();
+
       final user = FirebaseAuth.instance.currentUser!;
       final sessionsRef = FirebaseFirestore.instance
           .collection('users')
@@ -35,9 +38,8 @@ class _TestModeSelectionScreenState extends State<TestModeSelectionScreen> {
           .collection('sessions');
 
       final newSession = await sessionsRef.add({
-        'capture_mode': _selectedMode == TestMode.mobile
-            ? 'جوال'
-            : 'جهاز خارجي',
+        'capture_mode':
+            _selectedMode == TestMode.mobile ? 'جوال' : 'جهاز خارجي',
         'is_completed': false,
         'created_at': FieldValue.serverTimestamp(),
         'updated_at': FieldValue.serverTimestamp(),
@@ -53,7 +55,7 @@ class _TestModeSelectionScreenState extends State<TestModeSelectionScreen> {
         context,
         MaterialPageRoute(builder: (_) => const InstructionsScreen()),
       );
-    } catch (e) {
+    } catch (_) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('حصل خطأ أثناء إنشاء الجلسة')),
       );
@@ -71,14 +73,11 @@ class _TestModeSelectionScreenState extends State<TestModeSelectionScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Column(
               children: [
-                // ===== زر الرجوع (مصحّح RTL + أوضح) =====
                 Align(
                   alignment: Alignment.centerRight,
                   child: InkWell(
                     borderRadius: BorderRadius.circular(24),
-                    onTap: () {
-                      Navigator.pop(context);
-                    },
+                    onTap: () => Navigator.pop(context),
                     child: Container(
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
@@ -93,7 +92,7 @@ class _TestModeSelectionScreenState extends State<TestModeSelectionScreen> {
                         ],
                       ),
                       child: const Icon(
-                        Icons.arrow_back_ios_new, // ✅ صحيح لـ RTL
+                        Icons.arrow_back_ios_new,
                         size: 22,
                         color: Colors.black87,
                       ),
@@ -103,7 +102,6 @@ class _TestModeSelectionScreenState extends State<TestModeSelectionScreen> {
 
                 const SizedBox(height: 16),
 
-                // ===== المحتوى الأصلي =====
                 Expanded(
                   child: Center(
                     child: Column(
@@ -113,25 +111,20 @@ class _TestModeSelectionScreenState extends State<TestModeSelectionScreen> {
                           'طريقة إجراء الاختبار',
                           style:
                               Theme.of(context).textTheme.headlineMedium,
-                          textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 12),
-                        Text(
-                          'اختر الطريقة الأنسب لإجراء الاختبار',
-                          textAlign: TextAlign.center,
-                        ),
+                        const Text('اختر الطريقة الأنسب لإجراء الاختبار'),
                         const SizedBox(height: 32),
 
                         _ModeCard(
                           icon: Icons.smartphone,
                           title: 'على الهاتف',
                           description:
-                              'استخدام شاشة الهاتف والمايك والكاميرا',
+                              'استخدام كاميرا وميكروفون الهاتف',
                           selected:
                               _selectedMode == TestMode.mobile,
-                          onTap: () => setState(() {
-                            _selectedMode = TestMode.mobile;
-                          }),
+                          onTap: () =>
+                              setState(() => _selectedMode = TestMode.mobile),
                         ),
                         const SizedBox(height: 16),
 
@@ -139,22 +132,21 @@ class _TestModeSelectionScreenState extends State<TestModeSelectionScreen> {
                           icon: Icons.memory,
                           title: 'باستخدام جهاز خارجي',
                           description:
-                              'استخدام جهاز مخصص (الرايزبري باي) مع كاميرا ومايك',
+                              'للعيادات باستخدام مايك وكاميرا خارجية',
                           selected:
                               _selectedMode == TestMode.hardware,
-                          onTap: () => setState(() {
-                            _selectedMode = TestMode.hardware;
-                          }),
+                          onTap: () =>
+                              setState(() => _selectedMode = TestMode.hardware),
                         ),
+
                         const SizedBox(height: 32),
 
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
-                            onPressed:
-                                _selectedMode == null || _loading
-                                    ? null
-                                    : _startSession,
+                            onPressed: _selectedMode == null || _loading
+                                ? null
+                                : _startSession,
                             child: _loading
                                 ? const CircularProgressIndicator(
                                     color: Colors.white)
@@ -174,7 +166,7 @@ class _TestModeSelectionScreenState extends State<TestModeSelectionScreen> {
   }
 }
 
-/* ======================= MODE CARD ======================= */
+/* ================= MODE CARD ================= */
 
 class _ModeCard extends StatelessWidget {
   final IconData icon;
@@ -204,8 +196,9 @@ class _ModeCard extends StatelessWidget {
             color: selected ? AppTheme.primary : Colors.grey.shade300,
             width: 2,
           ),
-          color:
-              selected ? AppTheme.primary.withOpacity(0.08) : Colors.white,
+          color: selected
+              ? AppTheme.primary.withOpacity(0.08)
+              : Colors.white,
         ),
         child: Row(
           children: [
@@ -219,19 +212,11 @@ class _ModeCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                  Text(title,
+                      style: const TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 4),
-                  Text(
-                    description,
-                    style:
-                        Theme.of(context).textTheme.bodySmall,
-                  ),
+                  Text(description),
                 ],
               ),
             ),

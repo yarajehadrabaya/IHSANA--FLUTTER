@@ -4,12 +4,15 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:audioplayers/audioplayers.dart';
+
 import '../../theme/app_theme.dart';
 import '../../models/point_model.dart';
 import '../../utils/resampler.dart';
 import '../../painters/drawing_painter.dart';
 import '../../utils/moca_api_service.dart';
 import '../../utils/test_session.dart';
+import '../../utils/audio_session.dart';
+import '../widgets/test_question_scaffold.dart';
 import 'cube_copy_screen.dart';
 
 class TrailMakingScreen extends StatefulWidget {
@@ -32,19 +35,32 @@ class _TrailMakingScreenState extends State<TrailMakingScreen> {
   void initState() {
     super.initState();
     _loadImage();
+
+    // 🔊 اربط الـ player مع AudioSession
+    AudioSession.register(_audioPlayer);
+
     _playInstruction();
+  }
+
+  // ✅ الإضافة الوحيدة: إيقاف الصوت فور مغادرة الصفحة
+  @override
+  void deactivate() {
+    _audioPlayer.stop();
+    super.deactivate();
   }
 
   @override
   void dispose() {
+    AudioSession.unregister(_audioPlayer);
     _audioPlayer.dispose();
     super.dispose();
   }
 
   Future<void> _playInstruction() async {
-    try {
-      await _audioPlayer.play(AssetSource('audio/tmt.mp3'));
-    } catch (_) {}
+    await AudioSession.play(
+      _audioPlayer,
+      AssetSource('audio/tmt.mp3'),
+    );
   }
 
   Future<void> _loadImage() async {
@@ -96,6 +112,7 @@ class _TrailMakingScreenState extends State<TrailMakingScreen> {
       TestSession.trailsScore = (result['score'] as int? ?? 0);
 
       if (mounted) {
+        TestSession.nextQuestion();
         Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => const CubeCopyScreen()),
@@ -112,159 +129,93 @@ class _TrailMakingScreenState extends State<TrailMakingScreen> {
     }
   }
 
+  // ================== CANVAS ==================
+  Widget _trailContent() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final canvasSize =
+            Size(constraints.maxWidth, constraints.maxHeight);
+
+        if (bgImage == null) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: AppTheme.cardDecoration,
+          child: Stack(
+            children: [
+              GestureDetector(
+                onPanStart: (d) =>
+                    _startDraw(d.localPosition, canvasSize),
+                onPanUpdate: (d) =>
+                    _addPoint(d.localPosition, canvasSize),
+                child: CustomPaint(
+                  size: canvasSize,
+                  painter: DrawingPainter(points, bgImage!),
+                ),
+              ),
+
+              // ===== زر إعادة الرسم =====
+              Positioned(
+                top: 12,
+                right: 12,
+                child: Material(
+                  color: AppTheme.primary.withOpacity(0.9),
+                  shape: const CircleBorder(),
+                  child: InkWell(
+                    customBorder: const CircleBorder(),
+                    onTap: () {
+                      setState(() {
+                        points.clear();
+                        startTime = null;
+                      });
+                    },
+                    child: const Padding(
+                      padding: EdgeInsets.all(8),
+                      child: Icon(
+                        Icons.refresh,
+                        size: 18,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // ================== BUILD ==================
   @override
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        Scaffold(
-          backgroundColor: AppTheme.background,
-          body: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Column(
-                children: [
-                  const SizedBox(height: 8),
-                  Text(
-                    'تتبّع المسار',
-                    style: Theme.of(context)
-                        .textTheme
-                        .headlineSmall
-                        ?.copyWith(fontWeight: FontWeight.w600),
-                    textAlign: TextAlign.center,
-                  ),
+        TestQuestionScaffold(
+          title: 'تتبّع المسار',
+          instruction:
+              'اربط الأرقام والحروف بالتناوب (1-أ-2-ب...) دون رفع إصبعك عن الشاشة',
 
-                  TextButton.icon(
-                    onPressed: () => Navigator.popUntil(
-                        context, (r) => r.isFirst),
-                    icon: const Icon(
-                      Icons.warning_amber_rounded,
-                      size: 18,
-                      color: Colors.red,
-                    ),
-                    label: const Text(
-                      'إنهاء الجلسة',
-                      style: TextStyle(
-                        color: Colors.red,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
+          // 🔒 الصوت ليس إجباري هنا (لم يُمس)
+          allowMute: true,
 
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: AppTheme.primary.withOpacity(0.06),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Text(
-                      'اربط الأرقام والحروف بالتناوب (1-أ-2-ب...) دون رفع إصبعك عن الشاشة',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 15,
-                        height: 1.5,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
+          content: _trailContent(),
 
-                  const SizedBox(height: 16),
+          isNextEnabled: points.isNotEmpty && !_isLoading,
 
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: AppTheme.cardDecoration,
-                      child: LayoutBuilder(
-                        builder: (context, constraints) {
-                          final canvasSize = Size(
-                            constraints.maxWidth,
-                            constraints.maxHeight,
-                          );
+        onNext: () {
+          _audioPlayer.stop(); // 🔇 أوقف الصوت فورًا
+          final RenderBox box =
+              context.findRenderObject() as RenderBox;
+          _submitAndAnalyze(box.size);
+        },
 
-                          if (bgImage == null) {
-                            return const Center(
-                                child: CircularProgressIndicator());
-                          }
-
-                          return GestureDetector(
-                            onPanStart: (d) =>
-                                _startDraw(d.localPosition, canvasSize),
-                            onPanUpdate: (d) =>
-                                _addPoint(d.localPosition, canvasSize),
-                            child: CustomPaint(
-                              size: canvasSize,
-                              painter: DrawingPainter(points, bgImage!),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  // ===== أزرار موحّدة 100% =====
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () {
-                            setState(() {
-                              points.clear();
-                              startTime = null;
-                            });
-                          },
-                          icon: const Icon(Icons.refresh),
-                          label: const Text(
-                            'إعادة الرسم',
-                            style: TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            minimumSize: const Size.fromHeight(56),
-                            padding: const EdgeInsets.symmetric(
-                                vertical: 14, horizontal: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: points.isEmpty || _isLoading
-                              ? null
-                              : () {
-                                  final RenderBox box =
-                                      context.findRenderObject() as RenderBox;
-                                  _submitAndAnalyze(box.size);
-                                },
-                          icon: const Icon(Icons.check_circle_outline),
-                          label: const Text(
-                            'إنهاء وتحليل',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              height: 1.2,
-                            ),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            minimumSize: const Size.fromHeight(56),
-                            padding: const EdgeInsets.symmetric(
-                                vertical: 14, horizontal: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 16),
-                ],
-              ),
-            ),
-          ),
+          onEndSession: () {
+            Navigator.popUntil(context, (r) => r.isFirst);
+          },
         ),
 
         if (_isLoading)

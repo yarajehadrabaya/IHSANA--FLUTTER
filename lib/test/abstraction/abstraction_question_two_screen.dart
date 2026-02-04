@@ -23,12 +23,14 @@ class AbstractionQuestionTwoScreen extends StatefulWidget {
 class _AbstractionQuestionTwoScreenState
     extends State<AbstractionQuestionTwoScreen> {
   final AudioPlayer _instructionPlayer = AudioPlayer();
+  final AudioPlayer _btnSfxPlayer = AudioPlayer(); // 🆕 مشغل أصوات الأزرار الناطقة
   FlutterSoundRecorder? _recorder;
   final MocaApiService _apiService = MocaApiService();
 
   bool _isRecording = false;
   bool _isLoading = false;
   bool _hwRecording = false;
+  bool _audioFinished = false; // 🆕 لمتابعة انتهاء صوت التعليمات
 
   String? _recordedPath;
 
@@ -40,12 +42,22 @@ class _AbstractionQuestionTwoScreenState
       _recorder = FlutterSoundRecorder()..openRecorder();
     }
 
-    _instructionPlayer.play(AssetSource('audio/abstraction2.mp3'));
+    _playInstruction(); // 🆕 تشغيل التعليمات عند البدء
+  }
+
+  // 🆕 دالة تشغيل التعليمات ومراقبة انتهائها
+  Future<void> _playInstruction() async {
+    setState(() => _audioFinished = false);
+    await _instructionPlayer.play(AssetSource('audio/abstraction2.mp3'));
+    _instructionPlayer.onPlayerComplete.listen((_) {
+      if (mounted) setState(() => _audioFinished = true);
+    });
   }
 
   @override
   void dispose() {
     _instructionPlayer.dispose();
+    _btnSfxPlayer.dispose();
     _recorder?.closeRecorder();
     super.dispose();
   }
@@ -113,21 +125,10 @@ class _AbstractionQuestionTwoScreenState
 
     setState(() => _isLoading = true);
 
-    final result =
-        await _apiService.checkAbstraction(_recordedPath!, 2);
+    final result = await _apiService.checkAbstraction(_recordedPath!, 2);
 
     final score = (result['score'] as int?) ?? 0;
     TestSession.abstractionScore += score;
-
-    // ✅ طباعة النتيجة
-    debugPrint('==============================');
-    debugPrint('🧠 ABSTRACTION Q2 RESULT');
-    debugPrint('FULL RESPONSE: $result');
-    debugPrint('SCORE Q2: $score');
-    debugPrint(
-      'TOTAL ABSTRACTION SCORE: ${TestSession.abstractionScore}',
-    );
-    debugPrint('==============================');
 
     setState(() => _isLoading = false);
 
@@ -143,6 +144,11 @@ class _AbstractionQuestionTwoScreenState
   Widget build(BuildContext context) {
     final isHw = SessionContext.testMode == TestMode.hardware;
 
+    // 🆕 صوت الزر الناطق
+    String recordingSfx = (_isRecording || _hwRecording)
+        ? 'audio/stop_recording.mp3'
+        : 'audio/start_recording.mp3';
+
     return Stack(
       children: [
         TestQuestionScaffold(
@@ -150,34 +156,143 @@ class _AbstractionQuestionTwoScreenState
           instruction: isHw
               ? 'انطق الإجابة في ميكروفون الجهاز الخارجي'
               : 'ما وجه الشبه بين الساعة والمسطرة؟',
+          // 🆕 زر الإعادة يختفي أثناء التسجيل وأثناء تشغيل الأوتوبلاي
+          onRepeatInstruction: (_audioFinished && !_isRecording && !_hwRecording)
+              ? _playInstruction
+              : null,
           content: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              ElevatedButton.icon(
-                onPressed: _isLoading
-                    ? null
-                    : isHw
-                        ? _toggleHardwareRecording
-                        : _recordFromMobile,
-                icon: Icon(
-                  isHw
-                      ? Icons.settings_remote
-                      : (_isRecording ? Icons.stop : Icons.mic),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.06),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
                 ),
-                label: Text(
-                  isHw
-                      ? (_hwRecording ? 'إيقاف التسجيل' : 'بدء التسجيل')
-                      : (_isRecording ? 'إيقاف التسجيل' : 'سجل إجابتك'),
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.compare_arrows,
+                      size: 64,
+                      color: Colors.blue.shade600,
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    Text(
+                      'سجّل إجابتك صوتيًا',
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    SizedBox(
+                      width: double.infinity,
+                      child: GestureDetector(
+                        onLongPressStart: (_) {
+                          if (_audioFinished && !_isLoading) {
+                            _btnSfxPlayer.play(AssetSource(recordingSfx));
+                          }
+                        },
+                        onLongPressEnd: (_) => _btnSfxPlayer.stop(),
+                        child: ElevatedButton.icon(
+                          onPressed: (_isLoading || !_audioFinished) // معطل أثناء الأوتو بلاي
+                              ? null
+                              : isHw
+                                  ? _toggleHardwareRecording
+                                  : _recordFromMobile,
+                          icon: Icon(
+                            isHw
+                                ? Icons.settings_remote
+                                : (_isRecording ? Icons.stop : Icons.mic),
+                          ),
+                          label: Text(
+                            isHw
+                                ? (_hwRecording ? 'إيقاف التسجيل' : 'بدء التسجيل')
+                                : (_isRecording ? 'إيقاف التسجيل' : 'سجّل إجابتك'),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            backgroundColor: (_isRecording || _hwRecording)
+                                ? Colors.red
+                                : null,
+                            foregroundColor: (_isRecording || _hwRecording)
+                                ? Colors.white
+                                : null,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    if (_isRecording || _hwRecording)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 16),
+                        child: Column(
+                          children: [
+                            Icon(Icons.fiber_manual_record,
+                                color: Colors.red, size: 28),
+                            SizedBox(height: 6),
+                            Text(
+                              'جاري التسجيل...',
+                              style: TextStyle(
+                                color: Colors.red,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                    if (_recordedPath != null &&
+                        !_isRecording &&
+                        !_hwRecording)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 16),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.check_circle, color: Colors.green),
+                            SizedBox(width: 8),
+                            Text(
+                              'تم تسجيل الإجابة بنجاح',
+                              style: TextStyle(
+                                color: Colors.green,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ],
           ),
           isNextEnabled: _recordedPath != null && !_isLoading,
           onNext: _submit,
-          onEndSession: () =>
-              Navigator.popUntil(context, (r) => r.isFirst),
+          onEndSession: () => Navigator.popUntil(context, (r) => r.isFirst),
         ),
         if (_isLoading)
-          const Center(child: CircularProgressIndicator()),
+          Container(
+            color: Colors.black26,
+            child: const Center(
+              child: CircularProgressIndicator(),
+            ),
+          ),
       ],
     );
   }

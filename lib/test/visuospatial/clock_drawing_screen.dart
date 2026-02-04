@@ -1,18 +1,15 @@
 import 'dart:io';
 import 'dart:typed_data';
-
+import 'package:ihsana/test/naming/naming_intro_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:audioplayers/audioplayers.dart';
-
 import 'package:ihsana/test/widgets/test_question_scaffold.dart';
 import 'package:ihsana/utils/hardware_capture_service.dart';
-
 import '../../utils/moca_api_service.dart';
 import '../../utils/test_session.dart';
 import '../../session/session_context.dart';
 import '../test_mode_selection_screen.dart';
-import '../naming/naming_lion_screen.dart';
 
 class ClockDrawingScreen extends StatefulWidget {
   const ClockDrawingScreen({super.key});
@@ -24,6 +21,7 @@ class ClockDrawingScreen extends StatefulWidget {
 class _ClockDrawingScreenState extends State<ClockDrawingScreen> {
   final ImagePicker _picker = ImagePicker();
   final AudioPlayer _instructionPlayer = AudioPlayer();
+  final AudioPlayer _actionAudioPlayer = AudioPlayer();
   final MocaApiService _apiService = MocaApiService();
 
   Uint8List? _imageBytes;
@@ -39,6 +37,7 @@ class _ClockDrawingScreenState extends State<ClockDrawingScreen> {
   @override
   void dispose() {
     _instructionPlayer.dispose();
+    _actionAudioPlayer.dispose();
     super.dispose();
   }
 
@@ -52,11 +51,6 @@ class _ClockDrawingScreenState extends State<ClockDrawingScreen> {
 
   // ================= 📱 MOBILE CAMERA =================
   Future<void> _captureImageMobile() async {
-    setState(() {
-      _imageBytes = null;
-      _imagePath = null;
-    });
-
     final XFile? image = await _picker.pickImage(
       source: ImageSource.camera,
       imageQuality: 85,
@@ -66,9 +60,6 @@ class _ClockDrawingScreenState extends State<ClockDrawingScreen> {
 
     final bytes = await File(image.path).readAsBytes();
 
-    await PaintingBinding.instance.imageCache
-        .evict(FileImage(File(image.path)));
-
     setState(() {
       _imagePath = image.path;
       _imageBytes = bytes;
@@ -77,170 +68,224 @@ class _ClockDrawingScreenState extends State<ClockDrawingScreen> {
 
   // ================= 🖥️ HARDWARE CAMERA =================
   Future<void> _captureImageHardware() async {
-    setState(() {
-      _isLoading = true;
-      _imageBytes = null;
-      _imagePath = null;
-    });
+    setState(() => _isLoading = true);
 
     try {
       final imagePath = await HardwareCaptureService.captureImage();
       final bytes = await File(imagePath).readAsBytes();
 
-      PaintingBinding.instance.imageCache.clear();
-      PaintingBinding.instance.imageCache.clearLiveImages();
-
       setState(() {
         _imagePath = imagePath;
         _imageBytes = bytes;
       });
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('خطأ في التقاط الصورة من الجهاز الخارجي'),
-          ),
-        );
-      }
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  // ================= 🚀 ANALYZE & SUBMIT =================
+  // ================= 🚀 ANALYZE =================
   Future<void> _submitAndAnalyze() async {
     if (_imagePath == null) return;
 
     setState(() => _isLoading = true);
 
     try {
-      final result = await _apiService.checkVision(
-        _imagePath!,
-        'clock',
-      );
+      final result =
+          await _apiService.checkVision(_imagePath!, 'clock');
 
-      final score = result['score'] ?? 0;
-      TestSession.clockScore = score;
+      TestSession.clockScore = result['score'] ?? 0;
 
-      if (mounted) {
-        TestSession.nextQuestion();
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => const NamingLionScreen(),
-          ),
-        );
-      }
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('خطأ أثناء تحليل صورة الساعة'),
-          ),
-        );
-      }
+      if (!mounted) return;
+      TestSession.nextQuestion();
+      Navigator.push(
+  context,
+  MaterialPageRoute(
+    builder: (_) => const NamingIntroScreen(),
+  ),
+);
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  // ===== صوت إعادة الالتقاط =====
+  Future<void> _playRetakeVoice() async {
+    try {
+      await _actionAudioPlayer.stop();
+      await _actionAudioPlayer.play(
+        AssetSource('audio/retake_photo.mp3'),
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _stopRetakeVoice() async {
+    try {
+      await _actionAudioPlayer.stop();
+    } catch (_) {}
+  }
+
+  // ===== 🔊 صوت زر الالتقاط =====
+  Future<void> _playCaptureVoice() async {
+    try {
+      await _actionAudioPlayer.stop();
+      await _actionAudioPlayer.play(
+        AssetSource('audio/capture_photo.mp3'),
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _stopCaptureVoice() async {
+    try {
+      await _actionAudioPlayer.stop();
+    } catch (_) {}
   }
 
   @override
   Widget build(BuildContext context) {
-    final bool isMobile = SessionContext.testMode == TestMode.mobile;
+    final bool isMobile =
+        SessionContext.testMode == TestMode.mobile;
 
     return TestQuestionScaffold(
       title: 'رسم الساعة',
       instruction: isMobile
-          ? 'ارسم ساعة كاملة بالأرقام والعقارب (11:10) ثم صورها بالجوال.'
-          : 'ارسم الساعة على الورقة أمام الجهاز الخارجي ثم اضغط التقاط.',
+          ? 'ارسم ساعة كاملة بالأرقام والعقارب (11:10) ثم صوّرها بالجوال.'
+          : 'ارسم الساعة على الورقة أمام الجهاز ثم اضغط التقاط.',
       content: Column(
         children: [
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
 
-          // ===== زر الالتقاط / إعادة الالتقاط =====
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              icon: Icon(
-                _imageBytes == null ? Icons.camera_alt : Icons.refresh,
-              ),
-              label: Text(
-                _imageBytes == null
-                    ? (isMobile ? 'التقاط بالجوال' : 'التقاط من الجهاز')
-                    : 'إعادة التقاط الصورة',
-                textAlign: TextAlign.center,
-              ),
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(
-                  vertical: 14,
-                  horizontal: 12,
+          Expanded(
+            child: Center(
+              child: Container(
+                width: 320,
+                height: 320,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .primary
+                        .withOpacity(0.45),
+                    width: 2,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.06),
+                      blurRadius: 14,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
                 ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-              ),
-              onPressed: _isLoading
-                  ? null
-                  : (isMobile
-                      ? _captureImageMobile
-                      : _captureImageHardware),
-            ),
-          ),
-
-          const SizedBox(height: 24),
-
-          // ===== معاينة الصورة =====
-          Container(
-            width: 280,
-            height: 280,
-            decoration: BoxDecoration(
-              color: Colors.grey.shade100,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: Colors.grey.shade300,
-                width: 2,
-              ),
-            ),
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : (_imageBytes != null
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(14),
-                        child: Image.memory(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (_imageBytes != null)
+                        Image.memory(
                           _imageBytes!,
-                          key: UniqueKey(),
-                          fit: BoxFit.contain,
+                          fit: BoxFit.cover,
+                        )
+                      else
+                        Container(
+                          color: Colors.grey.shade100,
+                          alignment: Alignment.center,
+                          child: const Text(
+                            'بانتظار التقاط الصورة...',
+                            style: TextStyle(color: Colors.grey),
+                          ),
                         ),
-                      )
-                    : const Center(
-                        child: Text(
-                          'بانتظار التقاط الصورة...',
-                          style: TextStyle(color: Colors.grey),
-                        ),
-                      )),
-          ),
 
-          // ===== رسالة نجاح =====
-          if (_imageBytes != null && !_isLoading)
-            const Padding(
-              padding: EdgeInsets.only(top: 12),
-              child: Text(
-                '✅ تم التقاط الصورة بنجاح',
-                style: TextStyle(
-                  color: Colors.green,
-                  fontWeight: FontWeight.bold,
+                      // ===== زر الالتقاط (مع صوت) =====
+                      if (_imageBytes == null)
+                        Center(
+                          child: GestureDetector(
+                            onTapDown: (_) => _playCaptureVoice(),
+                            onTapUp: (_) => _stopCaptureVoice(),
+                            onTapCancel: _stopCaptureVoice,
+                            child: ElevatedButton.icon(
+                              icon: const Icon(Icons.camera_alt, size: 24),
+                              label: Text(
+                                isMobile
+                                    ? 'التقاط بالجوال'
+                                    : 'التقاط من الجهاز',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 28,
+                                  vertical: 16,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(18),
+                                ),
+                              ),
+                              onPressed: _isLoading
+                                  ? null
+                                  : (isMobile
+                                      ? _captureImageMobile
+                                      : _captureImageHardware),
+                            ),
+                          ),
+                        ),
+
+                      // ===== زر إعادة الالتقاط =====
+                      if (_imageBytes != null)
+                        Center(
+                          child: GestureDetector(
+                            onTapDown: (_) => _playRetakeVoice(),
+                            onTapUp: (_) => _stopRetakeVoice(),
+                            onTapCancel: _stopRetakeVoice,
+                            child: OutlinedButton.icon(
+                              icon: const Icon(Icons.refresh),
+                              label: const Text(
+                                'إعادة الالتقاط',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor:
+                                    Theme.of(context).colorScheme.primary,
+                                backgroundColor:
+                                    Colors.white.withOpacity(0.75),
+                                side: BorderSide(
+                                  color:
+                                      Theme.of(context).colorScheme.primary,
+                                  width: 2,
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 24,
+                                  vertical: 14,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(18),
+                                ),
+                              ),
+                              onPressed: _isLoading
+                                  ? null
+                                  : (isMobile
+                                      ? _captureImageMobile
+                                      : _captureImageHardware),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ),
+          ),
         ],
       ),
       isNextEnabled: _imageBytes != null && !_isLoading,
       onNext: _submitAndAnalyze,
-      onEndSession: () => Navigator.popUntil(context, (r) => r.isFirst),
+      onEndSession: () =>
+          Navigator.popUntil(context, (r) => r.isFirst),
     );
   }
 }
