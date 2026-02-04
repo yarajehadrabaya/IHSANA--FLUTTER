@@ -129,6 +129,8 @@ class _AbstractionQuestionOneScreenState
 
     final score = (result['score'] as int?) ?? 0;
     TestSession.abstractionScore = score;
+    debugPrint("Score from API: ${result['score']}");
+      debugPrint("Analysis: ${result['analysis']}");
 
     setState(() => _isLoading = false);
 

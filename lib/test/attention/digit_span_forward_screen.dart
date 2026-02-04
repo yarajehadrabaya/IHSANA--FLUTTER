@@ -145,6 +145,8 @@ class _DigitSpanForwardScreenState extends State<DigitSpanForwardScreen>
       );
 
       TestSession.forwardScore = result['score'] ?? 0;
+      debugPrint("Score from API: ${result['score']}");
+      debugPrint("Analysis: ${result['analysis']}");
 
       if (!mounted) return;
       TestSession.nextQuestion();

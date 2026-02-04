@@ -170,6 +170,8 @@ class _VerbalFluencyScreenState extends State<VerbalFluencyScreen> {
 
     final res = await _apiService.checkFluency(_audioPath!);
     TestSession.fluencyScore = res['score'] ?? 0;
+    debugPrint("Score from API: ${res['score']}");
+    debugPrint("Analysis: ${res['analysis']}");
 
     Navigator.push(
       context,

@@ -160,6 +160,8 @@ class _DigitSpanBackwardScreenState
       );
 
       TestSession.backwardScore = result['score'] ?? 0;
+      debugPrint("Score from API: ${result['score']}");
+      debugPrint("Analysis: ${result['analysis']}");
 
       if (!mounted) return;
       TestSession.nextQuestion();

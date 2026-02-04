@@ -386,6 +386,9 @@ class _OrientationScreenState extends State<OrientationScreen> {
       );
 
       TestSession.orientationScore = res['score'] ?? 0;
+       debugPrint("Score from API: ${res['score']}");
+      debugPrint("Analysis: ${res['analysis']}");
+      
 
       final result = MocaResult(
         visuospatial: TestSession.finalVisuospatial,

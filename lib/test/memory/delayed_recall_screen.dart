@@ -180,6 +180,8 @@ class _DelayedRecallScreenState extends State<DelayedRecallScreen> {
     try {
       final res = await _apiService.checkMemory(_audioPath!);
       TestSession.memoryScore = res['score'] ?? 0;
+      debugPrint("Score from API: ${res['score']}");
+      debugPrint("Analysis: ${res['analysis']}");
 
       Navigator.push(
         context,

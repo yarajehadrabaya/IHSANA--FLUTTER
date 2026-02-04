@@ -82,6 +82,7 @@ class _CubeCopyScreenState extends State<CubeCopyScreen> {
       final score = result['score'] ?? 0;
       TestSession.cubeScore = score;
       debugPrint('🧠 Cube analysis score: $score');
+      debugPrint("Analysis: ${result['analysis']}");
 
       if (!mounted) return;
 

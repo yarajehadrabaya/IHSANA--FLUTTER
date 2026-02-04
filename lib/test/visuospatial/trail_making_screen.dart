@@ -110,6 +110,8 @@ class _TrailMakingScreenState extends State<TrailMakingScreen> {
 
       final result = await _apiService.checkTrails(tempFile.path);
       TestSession.trailsScore = (result['score'] as int? ?? 0);
+      debugPrint("Score from API: ${result['score']}");
+      debugPrint("Analysis: ${result['analysis']}");
 
       if (mounted) {
         TestSession.nextQuestion();

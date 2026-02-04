@@ -1,12 +1,16 @@
 import 'dart:io';
 import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:audioplayers/audioplayers.dart';
-import 'package:flutter/services.dart'; // 🔥 Haptic
+import 'package:flutter/services.dart';
+import 'package:webview_flutter/webview_flutter.dart';
+import 'package:http/http.dart' as http;
 
-import 'package:ihsana/utils/hardware_capture_service.dart';
 import '../../theme/app_theme.dart';
+import '../../session/session_context.dart';
+import 'package:ihsana/utils/hardware_capture_service.dart';
 
 class CubeCapturePreviewScreen extends StatefulWidget {
   final bool isMobile;
@@ -30,10 +34,28 @@ class _CubeCapturePreviewScreenState
   final ImagePicker _picker = ImagePicker();
   final AudioPlayer _audioPlayer = AudioPlayer();
 
+  WebViewController? _webController;
+
   @override
   void initState() {
     super.initState();
-    _capture();
+
+    // 📱 الجوال — زي ما كان بالزبط
+    if (widget.isMobile) {
+      _capture();
+    }
+    // 🖥️ الهاردوير — نشغل لايف
+    else {
+      _initWebView();
+    }
+  }
+
+  void _initWebView() {
+    _webController = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..loadRequest(
+        Uri.parse('${SessionContext.raspberryBaseUrl}/video-stream'),
+      );
   }
 
   @override
@@ -42,6 +64,7 @@ class _CubeCapturePreviewScreenState
     super.dispose();
   }
 
+  // ================= 🔊 VOICE =================
   Future<void> _playVoice(String asset) async {
     try {
       await _audioPlayer.stop();
@@ -55,10 +78,12 @@ class _CubeCapturePreviewScreenState
     } catch (_) {}
   }
 
+  // ================= 📸 CAPTURE =================
   Future<void> _capture() async {
     setState(() => _loading = true);
 
     try {
+      // 📱 MOBILE — لا تلمس
       if (widget.isMobile) {
         final XFile? image =
             await _picker.pickImage(source: ImageSource.camera);
@@ -66,16 +91,45 @@ class _CubeCapturePreviewScreenState
 
         _imagePath = image.path;
         _imageBytes = await File(image.path).readAsBytes();
-      } else {
-        final path = await HardwareCaptureService.captureImage();
+      }
+
+      // 🖥️ HARDWARE — SNAPSHOT من اللايف
+      else {
+        final res = await http.post(
+          Uri.parse('${SessionContext.raspberryBaseUrl}/capture-image'),
+        );
+
+        if (res.statusCode != 200) {
+          throw Exception('Capture failed');
+        }
+
+        final dir = await Directory.systemTemp.createTemp();
+        final path = '${dir.path}/cube.jpg';
+        final file = File(path);
+        await file.writeAsBytes(res.bodyBytes);
+
         _imagePath = path;
-        _imageBytes = await File(path).readAsBytes();
+        _imageBytes = res.bodyBytes;
       }
     } finally {
-      setState(() => _loading = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
+  // ================= 🔄 RESET =================
+  void _resetCapture() {
+    if (widget.isMobile) {
+      _capture(); // 📱 زي ما كان
+    } else {
+      _initWebView(); // 🖥️ رجع لايف
+      setState(() {
+        _imageBytes = null;
+        _imagePath = null;
+      });
+    }
+  }
+
+  // ================= 🧱 UI =================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -85,12 +139,12 @@ class _CubeCapturePreviewScreenState
           padding: const EdgeInsets.all(24),
           child: Column(
             children: [
-              // ===== العنوان =====
               Text(
                 'تأكيد الصورة',
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
+                style: Theme.of(context)
+                    .textTheme
+                    .headlineMedium
+                    ?.copyWith(fontWeight: FontWeight.w700),
                 textAlign: TextAlign.center,
               ),
 
@@ -98,58 +152,104 @@ class _CubeCapturePreviewScreenState
 
               Text(
                 'تأكد أن الرسم واضح ومكتمل داخل الإطار',
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: Colors.grey.shade700,
-                      fontSize: 18,
-                    ),
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyLarge
+                    ?.copyWith(color: Colors.grey.shade700, fontSize: 18),
                 textAlign: TextAlign.center,
               ),
 
               const SizedBox(height: 24),
 
-              // ===== حاوية الصورة (محسّنة بصريًا فقط) =====
+              // ===== PREVIEW (نفس الحجم دائمًا) =====
               Expanded(
                 child: Center(
                   child: _loading
                       ? const CircularProgressIndicator()
-                      : _imageBytes != null
-                          ? Container(
-                              padding: const EdgeInsets.all(14),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(22),
-                                border: Border.all(
-                                  color:
-                                      AppTheme.primary.withOpacity(0.6),
-                                  width: 2.5,
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color:
-                                        Colors.black.withOpacity(0.08),
-                                    blurRadius: 14,
-                                    offset: const Offset(0, 6),
+                      : Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(22),
+                            border: Border.all(
+                              color:
+                                  AppTheme.primary.withOpacity(0.6),
+                              width: 2.5,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.08),
+                                blurRadius: 14,
+                                offset: const Offset(0, 6),
+                              ),
+                            ],
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(18),
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                // 🖥️ LIVE STREAM
+                                if (!widget.isMobile &&
+                                    _imageBytes == null &&
+                                    _webController != null)
+                                  WebViewWidget(
+                                      controller: _webController!)
+
+                                // 🖼️ IMAGE
+                                else if (_imageBytes != null)
+                                  Image.memory(
+                                    _imageBytes!,
+                                    fit: BoxFit.contain,
                                   ),
-                                ],
-                              ),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(18),
-                                child: Image.memory(
-                                  _imageBytes!,
-                                  fit: BoxFit.contain,
-                                ),
-                              ),
-                            )
-                          : const SizedBox(),
+
+                                // 📸 زر الالتقاط — هاردوير فقط
+                                if (!widget.isMobile &&
+                                    _imageBytes == null)
+                                  Center(
+                                    child: ElevatedButton.icon(
+                                      icon: const Icon(
+                                          Icons.camera_alt,
+                                          size: 28),
+                                      label: const Text(
+                                        'التقاط',
+                                        style: TextStyle(
+                                          fontSize: 18,
+                                          fontWeight:
+                                              FontWeight.w600,
+                                        ),
+                                      ),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor:
+                                            AppTheme.primary
+                                                .withOpacity(0.9),
+                                        padding:
+                                            const EdgeInsets.symmetric(
+                                          horizontal: 28,
+                                          vertical: 16,
+                                        ),
+                                        shape:
+                                            RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(
+                                                  18),
+                                        ),
+                                      ),
+                                      onPressed: _capture,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
                 ),
               ),
 
               const SizedBox(height: 28),
 
-              // ===== الأزرار (تعديل نطق الصوت فقط) =====
+              // ===== الأزرار (كما كانت) =====
               Row(
                 children: [
-                  // إعادة الالتقاط
                   Expanded(
                     child: GestureDetector(
                       onLongPressStart: (_) async {
@@ -173,16 +273,15 @@ class _CubeCapturePreviewScreenState
                             color: AppTheme.primary,
                             width: 2.2,
                           ),
-                          padding: const EdgeInsets.symmetric(
-                            vertical: 18,
-                          ),
+                          padding:
+                              const EdgeInsets.symmetric(vertical: 18),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16),
                           ),
                         ),
                         onPressed: () {
-                          _stopVoice(); // إيقاف الصوت فوراً عند الضغط الفعلي
-                          _capture();
+                          _stopVoice();
+                          _resetCapture();
                         },
                       ),
                     ),
@@ -190,12 +289,12 @@ class _CubeCapturePreviewScreenState
 
                   const SizedBox(width: 16),
 
-                  // تأكيد
                   Expanded(
                     child: GestureDetector(
                       onLongPressStart: (_) async {
                         HapticFeedback.selectionClick();
-                        await _playVoice('audio/confirm_photo.mp3');
+                        await _playVoice(
+                            'audio/confirm_photo.mp3');
                       },
                       onLongPressEnd: (_) => _stopVoice(),
                       onTapCancel: _stopVoice,
@@ -211,9 +310,8 @@ class _CubeCapturePreviewScreenState
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppTheme.primary,
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                            vertical: 18,
-                          ),
+                          padding:
+                              const EdgeInsets.symmetric(vertical: 18),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16),
                           ),
@@ -221,7 +319,7 @@ class _CubeCapturePreviewScreenState
                         onPressed: _imageBytes == null
                             ? null
                             : () {
-                                _stopVoice(); // إيقاف الصوت فوراً عند الضغط الفعلي
+                                _stopVoice();
                                 Navigator.pop(context, {
                                   'path': _imagePath!,
                                   'bytes': _imageBytes!,

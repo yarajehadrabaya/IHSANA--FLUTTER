@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:ihsana/test/visuospatial/cube_copy_screen.dart';
 
 import '../theme/app_theme.dart';
 import '../widgets/app_background.dart';
 import '../session/session_context.dart';
 import 'visuospatial/trail_making_screen.dart';
+import 'visuospatial/clock_drawing_screen.dart';
 
 class OrientationLocationScreen extends StatefulWidget {
   const OrientationLocationScreen({super.key});
@@ -81,7 +83,7 @@ class _OrientationLocationScreenState
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => const TrailMakingScreen(),
+          builder: (_) => const CubeCopyScreen(),
         ),
       );
     } catch (e) {
