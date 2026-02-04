@@ -116,6 +116,10 @@ class _CubeCopyScreenState extends State<CubeCopyScreen> {
       instruction: isMobile
           ? 'انسخ شكل المكعب على الورقة ثم صوره بالهاتف.'
           : 'انسخ شكل المكعب على الورقة ثم صوره بالكاميرا.',
+      
+      // ✅ تفعيل زر إعادة الاستماع بربطه بالدالة الموجودة مسبقاً
+      onRepeatInstruction: _playInstruction,
+
       content: SingleChildScrollView(
         child: Column(
           children: [

@@ -150,6 +150,10 @@ class _ClockDrawingScreenState extends State<ClockDrawingScreen> {
       instruction: isMobile
           ? 'ارسم ساعة كاملة بالأرقام والعقارب (11:10) ثم صوّرها بالجوال.'
           : 'ارسم الساعة على الورقة أمام الجهاز ثم اضغط التقاط.',
+      
+      // ✅ تم تفعيل خاصية إعادة الاستماع هنا
+      onRepeatInstruction: _playInstruction,
+
       content: Column(
         children: [
           const SizedBox(height: 12),

@@ -188,7 +188,8 @@ class _VerbalFluencyScreenState extends State<VerbalFluencyScreen> {
     return TestQuestionScaffold(
       title: 'الطلاقة اللفظية',
       instruction: 'اذكر أكبر عدد ممكن من الكلمات خلال دقيقة واحدة.',
-      onRepeatInstruction: _isRecording ? null : _playInstruction, 
+      // ✅ التعديل هنا: يظهر الزر فقط إذا انتهى الصوت (_audioFinished) وبشرط عدم وجود تسجيل حالي
+      onRepeatInstruction: (_audioFinished && !_isRecording) ? _playInstruction : null, 
       content: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [

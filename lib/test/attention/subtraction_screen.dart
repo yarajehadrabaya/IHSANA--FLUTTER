@@ -42,7 +42,7 @@ class _SubtractionScreenState extends State<SubtractionScreen> {
       _recorder = FlutterSoundRecorder()..openRecorder();
     }
 
-    // مراقبة انتهاء صوت التعليمات لإظهار زر الإعادة
+    // مراقبة انتهاء صوت التعليمات لإظهار زر الإعادة وتفعيل زر التسجيل
     _instructionPlayer.onPlayerComplete.listen((_) {
       if (mounted && !_isRecording) {
         setState(() => _showRepeatButton = true);
@@ -55,7 +55,7 @@ class _SubtractionScreenState extends State<SubtractionScreen> {
   Future<void> _playInstruction() async {
     // ===== DEBUG =====
     debugPrint('🔊 Playing subtraction instruction audio');
-    setState(() => _showRepeatButton = false);
+    setState(() => _showRepeatButton = false); // إخفاء الزر وتعطيل التسجيل أثناء التشغيل
     await _instructionPlayer.play(
       AssetSource('audio/subtraction.mp3'),
     );
@@ -91,6 +91,7 @@ class _SubtractionScreenState extends State<SubtractionScreen> {
       setState(() {
         _isRecording = false;
         _recordedPath = path;
+        _showRepeatButton = true; // إعادة إظهار زر الإعادة بعد انتهاء التسجيل
       });
     } else {
       // ===== DEBUG =====
@@ -109,6 +110,7 @@ class _SubtractionScreenState extends State<SubtractionScreen> {
       setState(() {
         _isRecording = true;
         _recordedPath = null;
+        _showRepeatButton = false;
       });
     }
   }
@@ -136,6 +138,7 @@ class _SubtractionScreenState extends State<SubtractionScreen> {
         setState(() {
           _recordedPath = file.path;
           _isRecording = false;
+          _showRepeatButton = true;
         });
       } finally {
         if (mounted) setState(() => _isLoading = false);
@@ -150,6 +153,7 @@ class _SubtractionScreenState extends State<SubtractionScreen> {
       setState(() {
         _isRecording = true;
         _recordedPath = null;
+        _showRepeatButton = false;
       });
     }
   }
@@ -212,6 +216,7 @@ class _SubtractionScreenState extends State<SubtractionScreen> {
           instruction: isHardware
               ? 'اضغط بدء ثم أنهِ التسجيل من الجهاز الخارجي'
               : 'اطرح 7 من 100 خمس مرات متتالية',
+          // تفعيل زر إعادة الاستماع في السكافولد
           onRepeatInstruction: _showRepeatButton ? _playInstruction : null,
           content: Center(
             child: Card(
@@ -247,7 +252,8 @@ class _SubtractionScreenState extends State<SubtractionScreen> {
                         onLongPressStart: (_) => _btnSfxPlayer.play(AssetSource(sfxPath)),
                         onLongPressEnd: (_) => _btnSfxPlayer.stop(),
                         child: ElevatedButton.icon(
-                          onPressed: _isLoading ? null : _onRecordPressed,
+                          // تعطيل الزر طالما أن الـ _showRepeatButton تساوي false (أي أثناء تشغيل الصوت)
+                          onPressed: (_isLoading || !_showRepeatButton && !_isRecording) ? null : _onRecordPressed,
                           icon: Icon(
                             _isRecording ? Icons.stop : Icons.mic,
                           ),

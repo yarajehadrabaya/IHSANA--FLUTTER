@@ -66,6 +66,8 @@ class ResultsScreen extends StatelessWidget {
         elevation: 0,
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
+        // ✅ تم إضافة هذا السطر لحذف زر الرجوع
+        automaticallyImplyLeading: false, 
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),

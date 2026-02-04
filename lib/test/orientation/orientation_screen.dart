@@ -257,19 +257,26 @@ class _OrientationScreenState extends State<OrientationScreen> {
                   ),
                   const SizedBox(height: 30),
                   GestureDetector(
-                    onTap: _isLoading ? null : () => _onRecordPressed(currentKey),
-                    child: Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: isRecordingNow
-                            ? Colors.red.withOpacity(0.1)
-                            : (isDoneRecording ? Colors.green.withOpacity(0.1) : Colors.blue.withOpacity(0.1)),
-                      ),
-                      child: Icon(
-                        isRecordingNow ? Icons.stop : (isDoneRecording ? Icons.check_circle : Icons.mic),
-                        size: 80,
-                        color: isRecordingNow ? Colors.red : (isDoneRecording ? Colors.green : Colors.blue),
+                    // التعديل هنا: التعطيل إذا تم التسجيل بنجاح (isDoneRecording) لمنع إعادة التشغيل من أيقونة الصح
+                    onTap: (_isLoading || isDoneRecording) ? null : () => _onRecordPressed(currentKey),
+                    // إذا كان جاري التسجيل، نترك الضغط مفعلاً للإيقاف
+                    child: GestureDetector(
+                      onTap: (_isLoading || (isDoneRecording && !isRecordingNow)) 
+                        ? null 
+                        : () => _onRecordPressed(currentKey),
+                      child: Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: isRecordingNow
+                              ? Colors.red.withOpacity(0.1)
+                              : (isDoneRecording ? Colors.green.withOpacity(0.1) : Colors.blue.withOpacity(0.1)),
+                        ),
+                        child: Icon(
+                          isRecordingNow ? Icons.stop : (isDoneRecording ? Icons.check_circle : Icons.mic),
+                          size: 80,
+                          color: isRecordingNow ? Colors.red : (isDoneRecording ? Colors.green : Colors.blue),
+                        ),
                       ),
                     ),
                   ),
@@ -324,7 +331,6 @@ class _OrientationScreenState extends State<OrientationScreen> {
                         : const SizedBox.shrink(),
                   ),
                   if (_currentIndex > 0 && !isLastStep) const SizedBox(width: 16),
-                  // التعديل هنا: يختفي زر التالي فقط عند السؤال الأخير
                   if (!isLastStep)
                   Expanded(
                     flex: 2,
@@ -363,7 +369,6 @@ class _OrientationScreenState extends State<OrientationScreen> {
           ],
         ),
       ),
-      // ربط زر إنهاء السكافولد بالدالة النهائية وتفعيله فقط في آخر سؤال
       isNextEnabled: isLastStep && isDoneRecording && !isRecordingNow, 
       onNext: _finish, 
       onEndSession: () => Navigator.popUntil(context, (r) => r.isFirst),

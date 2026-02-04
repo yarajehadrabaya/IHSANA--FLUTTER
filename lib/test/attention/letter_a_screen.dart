@@ -110,10 +110,13 @@ class _LetterAScreenState extends State<LetterAScreen> {
 
   // ===== تحريك المؤشر (تقريبي غير حساس للزمن) =====
   void _advanceIndex() async {
+    // ⏳ انتظار مدة المقدمة (17 ثانية) قبل بدء عد الحروف برمجياً
+    await Future.delayed(const Duration(seconds: 17));
+
     for (int i = 0; i < _letterTimeline.length; i++) {
       if (!_isPlaying) break;
+      _currentIndex = i; // تحديث المؤشر أولاً ليتوافق مع الحرف المسموع
       await Future.delayed(const Duration(milliseconds: 900));
-      _currentIndex = i;
     }
   }
 
@@ -172,7 +175,8 @@ class _LetterAScreenState extends State<LetterAScreen> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: _start,
+                // ✅ التعديل هنا: الزر يكون معطلاً (null) طالما لم ينتهِ الصوت بعد
+                onPressed: _showRepeatButton ? _start : null, 
                 child: const Text('ابدأ'),
               ),
             ),
@@ -197,6 +201,7 @@ class _LetterAScreenState extends State<LetterAScreen> {
                         const BoxShadow(
                           color: Colors.white,
                           blurRadius: 20,
+                          offset: const Offset(0, 0),
                         )
                       ]
                     : [],
@@ -217,8 +222,6 @@ class _LetterAScreenState extends State<LetterAScreen> {
           ),
 
           const SizedBox(height: 24),
-
-          // ===== زر إعادة مؤقت للاختبار =====
         
         ],
       ),
