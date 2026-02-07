@@ -7,19 +7,19 @@ import 'package:path_provider/path_provider.dart'; // ✅ ضروري لحفظ م
 class MocaApiService {
   // الروابط الأساسية للسبيسات المدمجة
   static const String langUrl =
-      "https://senior-moca-moca-language-test.hf.space";
+      "https://senior-moca2-moca-language-test.hf.space";
   static const String visionUrl =
-      "https://senior-moca-moca-vision-test.hf.space";
+      "https://senior-moca2-moca-vision-test.hf.space";
   static const String attentionUrl =
-      "https://senior-moca-moca-attention-test.hf.space";
+      "https://senior-moca2-moca-attention-test.hf.space";
   static const String memoryUrl =
-      "https://senior-moca-moca-memory-test.hf.space";
+      "https://senior-moca2-moca-memory-test.hf.space";
   static const String fluencyUrl =
-      "https://senior-moca-moca-fluency-test.hf.space";
+      "https://senior-moca2-moca-fluency-test.hf.space";
   static const String abstractUrl =
-      "https://senior-moca-moca-abstraction-test.hf.space";
+      "https://senior-moca2-moca-abstraction-test.hf.space";
   static const String orientUrl =
-      "https://senior-moca-moca-orientation-test.hf.space";
+      "https://senior-moca2-moca-orientation-test.hf.space";
 
   // ---------------------------------------------------------
   // 🚀 الجزء الجديد: التعامل مع الهاردوير (الرازبيري باي)
