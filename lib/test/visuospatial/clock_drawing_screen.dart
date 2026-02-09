@@ -7,7 +7,6 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:http/http.dart' as http;
 import 'package:webview_flutter/webview_flutter.dart';
 
-import 'package:ihsana/test/naming/naming_intro_screen.dart';
 import 'package:ihsana/test/naming/naming_lion_screen.dart';
 import 'package:ihsana/test/widgets/test_question_scaffold.dart';
 import '../../utils/moca_api_service.dart';
@@ -59,7 +58,6 @@ class _ClockDrawingScreenState extends State<ClockDrawingScreen> {
     super.dispose();
   }
 
-  // ================= 🔊 INSTRUCTION =================
   Future<void> _playInstruction() async {
     try {
       await _instructionPlayer.play(
@@ -68,7 +66,6 @@ class _ClockDrawingScreenState extends State<ClockDrawingScreen> {
     } catch (_) {}
   }
 
-  // ================= 📱 MOBILE =================
   Future<void> _captureImageMobile() async {
     final XFile? image = await _picker.pickImage(
       source: ImageSource.camera,
@@ -87,7 +84,6 @@ class _ClockDrawingScreenState extends State<ClockDrawingScreen> {
     });
   }
 
-  // ================= 🖥️ HARDWARE =================
   Future<void> _captureImageHardware() async {
     setState(() => _isLoading = true);
 
@@ -96,14 +92,9 @@ class _ClockDrawingScreenState extends State<ClockDrawingScreen> {
         Uri.parse('${SessionContext.raspberryBaseUrl}/capture-image'),
       );
 
-      if (res.statusCode != 200) {
-        throw Exception('Capture failed');
-      }
-
       final dir = await Directory.systemTemp.createTemp();
       final path = '${dir.path}/clock.jpg';
-      final file = File(path);
-      await file.writeAsBytes(res.bodyBytes);
+      await File(path).writeAsBytes(res.bodyBytes);
 
       setState(() {
         _imagePath = path;
@@ -111,18 +102,11 @@ class _ClockDrawingScreenState extends State<ClockDrawingScreen> {
         _captured = true;
         _showStream = false;
       });
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('فشل التقاط الصورة')),
-        );
-      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  // ================= 🔄 RESET =================
   void _resetCapture() {
     _initWebView();
     setState(() {
@@ -133,7 +117,6 @@ class _ClockDrawingScreenState extends State<ClockDrawingScreen> {
     });
   }
 
-  // ================= 🚀 ANALYZE =================
   Future<void> _submitAndAnalyze() async {
     if (_imagePath == null) return;
 
@@ -144,9 +127,7 @@ class _ClockDrawingScreenState extends State<ClockDrawingScreen> {
           await _apiService.checkVision(_imagePath!, 'clock');
 
       TestSession.clockScore = result['score'] ?? 0;
-
-      debugPrint('🧠 CLOCK SCORE: ${TestSession.clockScore}');
-      debugPrint('🧠 FULL RESULT: $result');
+       debugPrint("🧠 Clock analysis score: $result['score']");
 
       if (!mounted) return;
       TestSession.nextQuestion();
@@ -161,38 +142,6 @@ class _ClockDrawingScreenState extends State<ClockDrawingScreen> {
     }
   }
 
-  // ===== أصوات الأزرار (كما هي) =====
-  Future<void> _playCaptureVoice() async {
-    try {
-      await _actionAudioPlayer.stop();
-      await _actionAudioPlayer.play(
-        AssetSource('audio/capture_photo.mp3'),
-      );
-    } catch (_) {}
-  }
-
-  Future<void> _stopCaptureVoice() async {
-    try {
-      await _actionAudioPlayer.stop();
-    } catch (_) {}
-  }
-
-  Future<void> _playRetakeVoice() async {
-    try {
-      await _actionAudioPlayer.stop();
-      await _actionAudioPlayer.play(
-        AssetSource('audio/retake_photo.mp3'),
-      );
-    } catch (_) {}
-  }
-
-  Future<void> _stopRetakeVoice() async {
-    try {
-      await _actionAudioPlayer.stop();
-    } catch (_) {}
-  }
-
-  // ================= 🧱 UI (كما هو) =================
   @override
   Widget build(BuildContext context) {
     final bool isMobile =
@@ -211,10 +160,9 @@ class _ClockDrawingScreenState extends State<ClockDrawingScreen> {
           const SizedBox(height: 12),
 
           Expanded(
-            child: Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Container(
-                width: 320,
-                height: 320,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(22),
                   border: Border.all(
@@ -230,13 +178,36 @@ class _ClockDrawingScreenState extends State<ClockDrawingScreen> {
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
+                      /// ===== عرض موحّد (ستريم + صورة) =====
                       if (_captured && _imageBytes != null)
-                        Image.memory(_imageBytes!, fit: BoxFit.cover)
+                        ClipRect(
+                          child: FittedBox(
+                            fit: BoxFit.cover,
+                            alignment: Alignment.center,
+                            child: SizedBox(
+                              width: 640,
+                              height: 480,
+                              child: Image.memory(_imageBytes!),
+                            ),
+                          ),
+                        )
                       else if (!_captured &&
                           isHardware &&
                           _showStream &&
                           _webController != null)
-                        WebViewWidget(controller: _webController!)
+                        ClipRect(
+                          child: FittedBox(
+                            fit: BoxFit.cover,
+                            alignment: Alignment.center,
+                            child: SizedBox(
+                              width: 640,
+                              height: 480,
+                              child: WebViewWidget(
+                                controller: _webController!,
+                              ),
+                            ),
+                          ),
+                        )
                       else
                         Container(
                           color: Colors.grey.shade100,
@@ -249,38 +220,28 @@ class _ClockDrawingScreenState extends State<ClockDrawingScreen> {
 
                       if (!_captured)
                         Center(
-                          child: GestureDetector(
-                            onTapDown: (_) => _playCaptureVoice(),
-                            onTapUp: (_) => _stopCaptureVoice(),
-                            onTapCancel: _stopCaptureVoice,
-                            child: ElevatedButton.icon(
-                              icon: const Icon(Icons.camera_alt),
-                              label: Text(
-                                isMobile
-                                    ? 'التقاط بالجوال'
-                                    : 'التقاط من الجهاز',
-                              ),
-                              onPressed: _isLoading
-                                  ? null
-                                  : (isMobile
-                                      ? _captureImageMobile
-                                      : _captureImageHardware),
+                          child: ElevatedButton.icon(
+                            icon: const Icon(Icons.camera_alt),
+                            label: Text(
+                              isMobile
+                                  ? 'التقاط بالجوال'
+                                  : 'التقاط من الجهاز',
                             ),
+                            onPressed: _isLoading
+                                ? null
+                                : (isMobile
+                                    ? _captureImageMobile
+                                    : _captureImageHardware),
                           ),
                         ),
 
                       if (_captured)
                         Center(
-                          child: GestureDetector(
-                            onTapDown: (_) => _playRetakeVoice(),
-                            onTapUp: (_) => _stopRetakeVoice(),
-                            onTapCancel: _stopRetakeVoice,
-                            child: OutlinedButton.icon(
-                              icon: const Icon(Icons.refresh),
-                              label: const Text('إعادة الالتقاط'),
-                              onPressed:
-                                  _isLoading ? null : _resetCapture,
-                            ),
+                          child: OutlinedButton.icon(
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('إعادة الالتقاط'),
+                            onPressed:
+                                _isLoading ? null : _resetCapture,
                           ),
                         ),
                     ],
